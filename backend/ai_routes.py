@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from db import db
 from security import get_current_user
-from ai_service import ai_complete, ai_json, tavily_search
+from ai_service import ai_complete, ai_json, tavily_search, AIServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -269,6 +269,8 @@ async def deep_research(body: ResearchBody, user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Web search is disabled in your privacy settings.")
     try:
         tav = await tavily_search(body.query, max_results=6)
+    except AIServiceError:
+        raise  # handled globally with a user-safe message + category
     except Exception as e:
         logger.error(f"Tavily error: {e}")
         raise HTTPException(status_code=502, detail="Web search failed. Please try again.")

@@ -1,11 +1,13 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from db import db, client
 from security import get_user_id_from_token, hash_password
 from ws_manager import manager
+from ai_service import AIServiceError
 import auth
 import chat_routes
 import ai_routes
@@ -30,6 +32,22 @@ async def root():
 
 
 app.include_router(health)
+
+
+@app.exception_handler(AIServiceError)
+async def ai_service_error_handler(request: Request, exc: AIServiceError):
+    """Global AI/search error boundary: predictable JSON, user-safe message only.
+    503 signals a transient/provider condition the client can retry."""
+    logger.warning(f"[AI] handled AIServiceError provider={exc.provider} "
+                   f"category={exc.category} status={exc.status} path={request.url.path}")
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": exc.message,
+            "error": {"type": "ai_error", "category": exc.category,
+                      "provider": exc.provider, "retryable": exc.category in ("exhausted", "circuit_open", "rate_limited")},
+        },
+    )
 app.include_router(auth.router)
 app.include_router(chat_routes.router)
 app.include_router(ai_routes.router)
