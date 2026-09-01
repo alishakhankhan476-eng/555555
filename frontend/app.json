@@ -20,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#FF5E00"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.aimessenger.bq2ltq",
