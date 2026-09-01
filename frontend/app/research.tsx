@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, Platform, Linking } from "react-native";
+import { View, ScrollView, TextInput, Pressable, Linking } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing, radius, fontSize } from "@/src/theme";
 import { AppText, Icon, Card, EmptyState } from "@/src/ui";
@@ -40,7 +41,7 @@ export default function Research() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <StackHeader title="Deep Research" subtitle="Web research with citations" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={insets.top + 50}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
           {loading && (
             <View style={{ alignItems: "center", padding: spacing.xl }}>

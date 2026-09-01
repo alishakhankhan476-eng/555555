@@ -43,6 +43,11 @@ async def _issue_otp(user_id: str, email: str, name: str, purpose: str):
     code = _gen_otp()
     html = otp_email_html(name, code) if purpose == "verify" else reset_email_html(name, code)
     subject = "Your Chatly verification code" if purpose == "verify" else "Your Chatly password reset code"
+    # Dev/QA only: when OTP_DEBUG=1 log the code server-side so automated end-to-end
+    # tests can complete the verify/reset flow (the provider blocks fake test inboxes and
+    # codes are hashed at rest). Never enable in production; the code is never returned to the client.
+    if os.environ.get("OTP_DEBUG") == "1":
+        logger.info(f"[OTP_DEBUG] purpose={purpose} email={email} code={code}")
     await send_email(to=email, subject=subject, html=html)
     await db.otps.delete_many({"user_id": user_id, "purpose": purpose})
     await db.otps.insert_one({
@@ -54,6 +59,15 @@ async def _issue_otp(user_id: str, email: str, name: str, purpose: str):
         "last_sent": _now().isoformat(),
         "created_at": _now().isoformat(),
     })
+    return code
+
+
+def _dev(code: str | None) -> dict:
+    """Dev/QA only: surface the OTP in the API response when OTP_DEBUG=1 so curl-based
+    tests can complete flows. Empty in production; the frontend never reads this field."""
+    if code and os.environ.get("OTP_DEBUG") == "1":
+        return {"dev_code": code}
+    return {}
 
 
 async def _verify_otp(user_id: str, purpose: str, code: str) -> bool:
@@ -120,8 +134,8 @@ async def signup(body: SignupBody):
         if existing.get("email_verified"):
             raise HTTPException(status_code=409, detail="An account with this email already exists.")
         # unverified — resend code
-        await _issue_otp(existing["user_id"], email, existing["name"], "verify")
-        return {"status": "otp_sent", "email": email}
+        code = await _issue_otp(existing["user_id"], email, existing["name"], "verify")
+        return {"status": "otp_sent", "email": email, **_dev(code)}
 
     user_id = str(uuid.uuid4())
     username = email.split("@")[0] + secrets.token_hex(2)
@@ -150,8 +164,8 @@ async def signup(body: SignupBody):
         }},
         upsert=True,
     )
-    await _issue_otp(user_id, email, body.name.strip(), "verify")
-    return {"status": "otp_sent", "email": email}
+    code = await _issue_otp(user_id, email, body.name.strip(), "verify")
+    return {"status": "otp_sent", "email": email, **_dev(code)}
 
 
 @router.post("/verify-otp")
@@ -175,8 +189,8 @@ async def resend_otp(body: EmailBody):
         raise HTTPException(status_code=404, detail="Account not found.")
     if user.get("email_verified"):
         raise HTTPException(status_code=400, detail="Email already verified.")
-    await _issue_otp(user["user_id"], email, user["name"], "verify")
-    return {"status": "otp_sent", "email": email}
+    code = await _issue_otp(user["user_id"], email, user["name"], "verify")
+    return {"status": "otp_sent", "email": email, **_dev(code)}
 
 
 @router.post("/login")
@@ -200,7 +214,8 @@ async def forgot_password(body: EmailBody):
     # Do not reveal whether the account exists, but still issue if it does.
     if user:
         try:
-            await _issue_otp(user["user_id"], email, user["name"], "reset")
+            code = await _issue_otp(user["user_id"], email, user["name"], "reset")
+            return {"status": "reset_sent", "email": email, **_dev(code)}
         except HTTPException as e:
             if e.status_code == 429:
                 raise

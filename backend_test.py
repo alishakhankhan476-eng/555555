@@ -1,470 +1,452 @@
 #!/usr/bin/env python3
 """
-Backend API test suite for Chatly AI Messenger P0 changes.
-Tests retry logic, circuit breaker, and global error handling.
+OTP Authentication Flow Testing for Chatly AI Messenger
+Tests signup, verify, resend, forgot-password, reset-password, and rate limiting
 """
 import requests
-import json
-import re
+import time
 import sys
+from typing import Dict, Any
 
 # Backend URL from frontend/.env
 BASE_URL = "https://e0cff6da-eabf-4eff-9687-61106030666f.preview.emergentagent.com/api"
 
-# Test credentials from /app/memory/test_credentials.md
-TEST_EMAIL = "demo@chatly.app"
-TEST_PASSWORD = "Demo1234"
+# Test credentials
+TEST_EMAIL = "delivered@resend.dev"
+TEST_NAME = "QA Bot"
+TEST_PASSWORD = "Test1234"
+DEMO_EMAIL = "demo@chatly.app"
+DEMO_PASSWORD = "Demo1234"
 
-# Sensitive patterns that should NEVER appear in responses
-SENSITIVE_PATTERNS = [
-    r"Traceback",
-    r"sk_",  # Sarvam key prefix
-    r"tvly",  # Tavily key prefix
-    r"sk-emergent",  # Emergent key prefix
-    r"SARVAM_API_KEY",
-    r"TAVILY_API_KEY",
-    r"EMERGENT_LLM_KEY",
-]
+# Security check patterns
+SECURITY_PATTERNS = ["Traceback", "sk_", "tvly", "sk-emergent"]
 
-class TestResult:
-    def __init__(self):
-        self.passed = []
-        self.failed = []
-        self.warnings = []
+def check_security(response_text: str, step: str) -> list:
+    """Check if response contains any security leaks"""
+    leaks = []
+    for pattern in SECURITY_PATTERNS:
+        if pattern in response_text:
+            leaks.append(f"SECURITY LEAK in {step}: Found '{pattern}' in response")
+    return leaks
+
+def test_signup_verify_flow():
+    """Test A: SIGNUP + VERIFY flow"""
+    results = []
+    security_issues = []
     
-    def add_pass(self, test_name, details=""):
-        self.passed.append(f"✅ {test_name}: {details}")
+    print("\n=== A) SIGNUP + VERIFY FLOW ===\n")
     
-    def add_fail(self, test_name, details=""):
-        self.failed.append(f"❌ {test_name}: {details}")
+    # Step 1: Signup
+    print("Step 1: POST /api/auth/signup")
+    payload = {"name": TEST_NAME, "email": TEST_EMAIL, "password": TEST_PASSWORD}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/signup", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "signup"))
+        
+        if resp.status_code == 409:
+            print(f"  ✓ Status: {resp.status_code} (account already exists and verified)")
+            print(f"  Response: {resp.json()}")
+            results.append(("Step 1: Signup (already verified)", resp.status_code, "SKIP - account verified", resp.json()))
+            # Skip to step 4 (login)
+            return test_login_only(results, security_issues)
+        elif resp.status_code == 200:
+            data = resp.json()
+            print(f"  ✓ Status: {resp.status_code}")
+            print(f"  Response: {data}")
+            dev_code = data.get("dev_code")
+            if not dev_code:
+                results.append(("Step 1: Signup", resp.status_code, "FAIL - no dev_code", data))
+                print("  ✗ FAIL: No dev_code in response")
+                return results, security_issues
+            results.append(("Step 1: Signup", resp.status_code, "PASS", data))
+        else:
+            print(f"  ✗ Status: {resp.status_code}")
+            print(f"  Response: {resp.text}")
+            results.append(("Step 1: Signup", resp.status_code, "FAIL", resp.text))
+            return results, security_issues
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 1: Signup", "ERROR", str(e), None))
+        return results, security_issues
     
-    def add_warning(self, test_name, details=""):
-        self.warnings.append(f"⚠️  {test_name}: {details}")
+    # Step 2: Wrong code
+    print("\nStep 2: POST /api/auth/verify-otp (wrong code)")
+    payload = {"email": TEST_EMAIL, "code": "000000"}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/verify-otp", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "verify-otp wrong"))
+        print(f"  ✓ Status: {resp.status_code}")
+        print(f"  Response: {resp.json()}")
+        if resp.status_code == 400 and "attempts left" in resp.text.lower():
+            results.append(("Step 2: Verify wrong code", resp.status_code, "PASS", resp.json()))
+        else:
+            results.append(("Step 2: Verify wrong code", resp.status_code, "FAIL - expected 400 with attempts left", resp.json()))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 2: Verify wrong code", "ERROR", str(e), None))
     
-    def print_summary(self):
-        print("\n" + "="*80)
-        print("TEST SUMMARY")
-        print("="*80)
-        
-        if self.failed:
-            print("\n🔴 FAILED TESTS:")
-            for f in self.failed:
-                print(f"  {f}")
-        
-        if self.warnings:
-            print("\n🟡 WARNINGS:")
-            for w in self.warnings:
-                print(f"  {w}")
-        
-        if self.passed:
-            print("\n🟢 PASSED TESTS:")
-            for p in self.passed:
-                print(f"  {p}")
-        
-        print("\n" + "="*80)
-        print(f"Total: {len(self.passed)} passed, {len(self.failed)} failed, {len(self.warnings)} warnings")
-        print("="*80)
-        
-        return len(self.failed) == 0
-
-def check_for_leaks(response_text, test_name, result):
-    """Check if response contains sensitive data or stack traces."""
-    leaked = []
-    for pattern in SENSITIVE_PATTERNS:
-        if re.search(pattern, response_text, re.IGNORECASE):
-            leaked.append(pattern)
+    # Step 3: Correct code
+    print("\nStep 3: POST /api/auth/verify-otp (correct code)")
+    payload = {"email": TEST_EMAIL, "code": dev_code}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/verify-otp", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "verify-otp correct"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        if resp.status_code == 200 and "token" in data and "user" in data:
+            results.append(("Step 3: Verify correct code", resp.status_code, "PASS", data))
+        else:
+            results.append(("Step 3: Verify correct code", resp.status_code, "FAIL - expected 200 with token and user", data))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 3: Verify correct code", "ERROR", str(e), None))
     
-    if leaked:
-        result.add_fail(f"{test_name} - Security", f"Response leaked sensitive data: {', '.join(leaked)}")
-        return False
-    return True
-
-def test_auth_login(result):
-    """Test 1: POST /api/auth/login"""
-    print("\n[1] Testing POST /api/auth/login...")
+    # Step 4: Login
+    print("\nStep 4: POST /api/auth/login")
+    payload = {"email": TEST_EMAIL, "password": TEST_PASSWORD}
     try:
-        response = requests.post(
-            f"{BASE_URL}/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
-            timeout=30
-        )
-        
-        check_for_leaks(response.text, "Login", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "token" in data:
-                result.add_pass("Login", f"Status {response.status_code}, token received")
-                return data["token"]
-            else:
-                result.add_fail("Login", f"Status {response.status_code} but no token in response")
-                return None
+        resp = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "login"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        if resp.status_code == 200 and "token" in data and "user" in data:
+            results.append(("Step 4: Login", resp.status_code, "PASS", data))
         else:
-            result.add_fail("Login", f"Status {response.status_code}: {response.text[:200]}")
-            return None
+            results.append(("Step 4: Login", resp.status_code, "FAIL - expected 200 with token and user", data))
     except Exception as e:
-        result.add_fail("Login", f"Exception: {str(e)}")
-        return None
-
-def test_get_chats(token, result):
-    """Test 2: GET /api/chats"""
-    print("\n[2] Testing GET /api/chats...")
-    try:
-        response = requests.get(
-            f"{BASE_URL}/chats",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30
-        )
-        
-        check_for_leaks(response.text, "Get Chats", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            chats = data.get("chats", [])
-            result.add_pass("Get Chats", f"Status {response.status_code}, {len(chats)} chats found")
-            return chats[0]["chat_id"] if chats else None
-        else:
-            result.add_fail("Get Chats", f"Status {response.status_code}: {response.text[:200]}")
-            return None
-    except Exception as e:
-        result.add_fail("Get Chats", f"Exception: {str(e)}")
-        return None
-
-def test_ai_chat(token, result):
-    """Test 3: POST /api/ai/chat"""
-    print("\n[3] Testing POST /api/ai/chat...")
-    try:
-        response = requests.post(
-            f"{BASE_URL}/ai/chat",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"message": "In one sentence, what can you do?"},
-            timeout=120
-        )
-        
-        check_for_leaks(response.text, "AI Chat", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "conversation_id" in data and "reply" in data and data["reply"]:
-                result.add_pass("AI Chat", f"Status {response.status_code}, reply: '{data['reply'][:80]}...'")
-                return True
-            else:
-                result.add_fail("AI Chat", f"Status {response.status_code} but missing conversation_id or reply")
-                return False
-        elif response.status_code == 503:
-            # 503 with structured error is acceptable
-            data = response.json()
-            if "detail" in data and "error" in data:
-                result.add_warning("AI Chat", f"Status 503 (acceptable structured error): {data['detail']}")
-                return True
-            else:
-                result.add_fail("AI Chat", f"Status 503 but not structured error: {response.text[:200]}")
-                return False
-        else:
-            result.add_fail("AI Chat", f"Status {response.status_code}: {response.text[:200]}")
-            return False
-    except Exception as e:
-        result.add_fail("AI Chat", f"Exception: {str(e)}")
-        return False
-
-def test_smart_reply(token, chat_id, result):
-    """Test 4: POST /api/ai/smart-reply"""
-    print("\n[4] Testing POST /api/ai/smart-reply...")
-    if not chat_id:
-        result.add_warning("Smart Reply", "Skipped - no chat_id available")
-        return False
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 4: Login", "ERROR", str(e), None))
     
-    try:
-        response = requests.post(
-            f"{BASE_URL}/ai/smart-reply",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"chat_id": chat_id},
-            timeout=120
-        )
-        
-        check_for_leaks(response.text, "Smart Reply", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "replies" in data and isinstance(data["replies"], list):
-                result.add_pass("Smart Reply", f"Status {response.status_code}, {len(data['replies'])} replies")
-                return True
-            else:
-                result.add_fail("Smart Reply", f"Status {response.status_code} but missing/invalid replies")
-                return False
-        elif response.status_code == 503:
-            data = response.json()
-            if "detail" in data and "error" in data:
-                result.add_warning("Smart Reply", f"Status 503 (acceptable structured error): {data['detail']}")
-                return True
-            else:
-                result.add_fail("Smart Reply", f"Status 503 but not structured error")
-                return False
-        else:
-            result.add_fail("Smart Reply", f"Status {response.status_code}: {response.text[:200]}")
-            return False
-    except Exception as e:
-        result.add_fail("Smart Reply", f"Exception: {str(e)}")
-        return False
+    return results, security_issues
 
-def test_chat_brain(token, chat_id, result):
-    """Test 5: POST /api/ai/chat-brain"""
-    print("\n[5] Testing POST /api/ai/chat-brain...")
-    if not chat_id:
-        result.add_warning("Chat Brain", "Skipped - no chat_id available")
-        return False
+def test_login_only(results, security_issues):
+    """Test login when account is already verified"""
+    print("\nStep 4: POST /api/auth/login (account already verified)")
+    payload = {"email": TEST_EMAIL, "password": TEST_PASSWORD}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "login"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        if resp.status_code == 200 and "token" in data and "user" in data:
+            results.append(("Step 4: Login", resp.status_code, "PASS", data))
+        else:
+            results.append(("Step 4: Login", resp.status_code, "FAIL - expected 200 with token and user", data))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 4: Login", "ERROR", str(e), None))
     
-    try:
-        response = requests.post(
-            f"{BASE_URL}/ai/chat-brain",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"chat_id": chat_id, "kind": "summary"},
-            timeout=120
-        )
-        
-        check_for_leaks(response.text, "Chat Brain", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "kind" in data and "result" in data:
-                result.add_pass("Chat Brain", f"Status {response.status_code}, result: '{data['result'][:60]}...'")
-                return True
-            else:
-                result.add_fail("Chat Brain", f"Status {response.status_code} but missing kind/result")
-                return False
-        elif response.status_code == 503:
-            data = response.json()
-            if "detail" in data and "error" in data:
-                result.add_warning("Chat Brain", f"Status 503 (acceptable structured error): {data['detail']}")
-                return True
-            else:
-                result.add_fail("Chat Brain", f"Status 503 but not structured error")
-                return False
-        else:
-            result.add_fail("Chat Brain", f"Status {response.status_code}: {response.text[:200]}")
-            return False
-    except Exception as e:
-        result.add_fail("Chat Brain", f"Exception: {str(e)}")
-        return False
+    return results, security_issues
 
-def test_ask_chats(token, result):
-    """Test 6: POST /api/ai/ask-chats"""
-    print("\n[6] Testing POST /api/ai/ask-chats...")
+def test_resend_cooldown():
+    """Test B: RESEND COOLDOWN (rate limit on resend)"""
+    results = []
+    security_issues = []
+    
+    print("\n=== B) RESEND COOLDOWN ===\n")
+    
+    print("Step 5: POST /api/auth/resend-otp (testing cooldown)")
+    payload = {"email": TEST_EMAIL}
     try:
-        response = requests.post(
-            f"{BASE_URL}/ai/ask-chats",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "project deadline"},
-            timeout=120
-        )
+        resp = requests.post(f"{BASE_URL}/auth/resend-otp", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "resend-otp"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+        print(f"  Response: {data}")
         
-        check_for_leaks(response.text, "Ask Chats", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "answer" in data and "sources" in data:
-                result.add_pass("Ask Chats", f"Status {response.status_code}, {len(data['sources'])} sources")
-                return True
+        if resp.status_code == 400 and "already verified" in str(data).lower():
+            results.append(("Step 5: Resend cooldown", resp.status_code, "PASS - account already verified (expected)", data))
+            print("  ✓ Account already verified (expected behavior)")
+        elif resp.status_code == 200:
+            # Try immediate second resend
+            print("\n  Attempting immediate second resend...")
+            resp2 = requests.post(f"{BASE_URL}/auth/resend-otp", json=payload, timeout=30)
+            security_issues.extend(check_security(resp2.text, "resend-otp second"))
+            print(f"  ✓ Status: {resp2.status_code}")
+            data2 = resp2.json() if resp2.headers.get("content-type", "").startswith("application/json") else resp2.text
+            print(f"  Response: {data2}")
+            if resp2.status_code == 429:
+                results.append(("Step 5: Resend cooldown", resp2.status_code, "PASS - cooldown enforced", data2))
             else:
-                result.add_fail("Ask Chats", f"Status {response.status_code} but missing answer/sources")
-                return False
-        elif response.status_code == 503:
-            data = response.json()
-            if "detail" in data and "error" in data:
-                result.add_warning("Ask Chats", f"Status 503 (acceptable structured error): {data['detail']}")
-                return True
-            else:
-                result.add_fail("Ask Chats", f"Status 503 but not structured error")
-                return False
+                results.append(("Step 5: Resend cooldown", resp2.status_code, "FAIL - expected 429 on immediate resend", data2))
         else:
-            result.add_fail("Ask Chats", f"Status {response.status_code}: {response.text[:200]}")
-            return False
+            results.append(("Step 5: Resend cooldown", resp.status_code, "UNEXPECTED", data))
     except Exception as e:
-        result.add_fail("Ask Chats", f"Exception: {str(e)}")
-        return False
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 5: Resend cooldown", "ERROR", str(e), None))
+    
+    return results, security_issues
 
-def test_research(token, result):
-    """Test 7: POST /api/ai/research (Tavily)"""
-    print("\n[7] Testing POST /api/ai/research (Tavily)...")
+def test_forgot_reset_flow():
+    """Test C: FORGOT PASSWORD + RESET"""
+    results = []
+    security_issues = []
+    
+    print("\n=== C) FORGOT PASSWORD + RESET ===\n")
+    
+    # Step 6: Forgot password (use TEST_EMAIL since demo@chatly.app is blocked by email provider)
+    print("Step 6: POST /api/auth/forgot-password")
+    print("  Note: Using delivered@resend.dev instead of demo@chatly.app (email provider blocks non-deliverable addresses)")
+    payload = {"email": TEST_EMAIL}
     try:
-        response = requests.post(
-            f"{BASE_URL}/ai/research",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "latest news on AI"},
-            timeout=120
-        )
-        
-        check_for_leaks(response.text, "Research", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "report" in data and "sources" in data:
-                result.add_pass("Research", f"Status {response.status_code}, {len(data['sources'])} sources")
-                return True
-            else:
-                result.add_fail("Research", f"Status {response.status_code} but missing report/sources")
-                return False
-        elif response.status_code == 503:
-            # 503 with structured error is acceptable for Tavily
-            try:
-                data = response.json()
-                if "detail" in data and "error" in data:
-                    error = data["error"]
-                    if "category" in error and "provider" in error:
-                        result.add_warning("Research", f"Status 503 (acceptable structured error): {data['detail']}, category={error['category']}")
-                        return True
-                    else:
-                        result.add_fail("Research", f"Status 503 but error missing category/provider")
-                        return False
-                else:
-                    result.add_fail("Research", f"Status 503 but not structured error")
-                    return False
-            except:
-                result.add_fail("Research", f"Status 503 but response not JSON")
-                return False
+        resp = requests.post(f"{BASE_URL}/auth/forgot-password", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "forgot-password"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        dev_code = data.get("dev_code")
+        if resp.status_code == 200 and dev_code:
+            results.append(("Step 6: Forgot password", resp.status_code, "PASS", data))
         else:
-            result.add_fail("Research", f"Status {response.status_code}: {response.text[:200]}")
-            return False
+            results.append(("Step 6: Forgot password", resp.status_code, "FAIL - expected 200 with dev_code", data))
+            return results, security_issues
     except Exception as e:
-        result.add_fail("Research", f"Exception: {str(e)}")
-        return False
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 6: Forgot password", "ERROR", str(e), None))
+        return results, security_issues
+    
+    # Step 7: Wrong reset code
+    print("\nStep 7: POST /api/auth/reset-password (wrong code)")
+    payload = {"email": TEST_EMAIL, "code": "000000", "new_password": TEST_PASSWORD}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/reset-password", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "reset-password wrong"))
+        print(f"  ✓ Status: {resp.status_code}")
+        print(f"  Response: {resp.json()}")
+        if resp.status_code == 400:
+            results.append(("Step 7: Reset wrong code", resp.status_code, "PASS", resp.json()))
+        else:
+            results.append(("Step 7: Reset wrong code", resp.status_code, "FAIL - expected 400", resp.json()))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 7: Reset wrong code", "ERROR", str(e), None))
+    
+    # Step 8: Correct reset
+    print("\nStep 8: POST /api/auth/reset-password (correct code)")
+    payload = {"email": TEST_EMAIL, "code": dev_code, "new_password": TEST_PASSWORD}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/reset-password", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "reset-password correct"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        if resp.status_code == 200 and data.get("status") == "password_updated":
+            results.append(("Step 8: Reset correct code", resp.status_code, "PASS", data))
+        else:
+            results.append(("Step 8: Reset correct code", resp.status_code, "FAIL - expected 200 with password_updated", data))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 8: Reset correct code", "ERROR", str(e), None))
+    
+    # Step 9: Login with reset password
+    print("\nStep 9: POST /api/auth/login (with reset password)")
+    payload = {"email": TEST_EMAIL, "password": TEST_PASSWORD}
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "login after reset"))
+        print(f"  ✓ Status: {resp.status_code}")
+        data = resp.json()
+        print(f"  Response: {data}")
+        if resp.status_code == 200 and "token" in data:
+            results.append(("Step 9: Login with reset password", resp.status_code, "PASS", data))
+        else:
+            results.append(("Step 9: Login with reset password", resp.status_code, "FAIL - expected 200 with token", data))
+    except Exception as e:
+        print(f"  ✗ ERROR: {e}")
+        results.append(("Step 9: Login with reset password", "ERROR", str(e), None))
+    
+    return results, security_issues
 
-def test_ai_create(token, result):
-    """Test 8: POST /api/ai/create"""
-    print("\n[8] Testing POST /api/ai/create...")
+def test_rate_limit():
+    """Test D: RATE LIMIT (max attempts)"""
+    results = []
+    security_issues = []
+    
+    print("\n=== D) RATE LIMIT (MAX ATTEMPTS) ===\n")
+    
+    # Step 10: Trigger fresh reset and exhaust attempts
+    print("Step 10: Testing rate limit (5 wrong attempts)")
+    print("  Note: Using delivered@resend.dev for testing")
+    
+    # Get a fresh reset code
+    print("  Getting fresh reset code...")
+    payload = {"email": TEST_EMAIL}
     try:
-        response = requests.post(
-            f"{BASE_URL}/ai/create",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"kind": "document", "prompt": "a short project status report"},
-            timeout=120
-        )
-        
-        check_for_leaks(response.text, "AI Create", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "id" in data and "kind" in data and "title" in data and "content" in data:
-                result.add_pass("AI Create", f"Status {response.status_code}, created {data['kind']}: {data['title']}")
-                return True
-            else:
-                result.add_fail("AI Create", f"Status {response.status_code} but missing id/kind/title/content")
-                return False
-        elif response.status_code == 503:
-            data = response.json()
-            if "detail" in data and "error" in data:
-                result.add_warning("AI Create", f"Status 503 (acceptable structured error): {data['detail']}")
-                return True
-            else:
-                result.add_fail("AI Create", f"Status 503 but not structured error")
-                return False
-        else:
-            result.add_fail("AI Create", f"Status {response.status_code}: {response.text[:200]}")
-            return False
+        resp = requests.post(f"{BASE_URL}/auth/forgot-password", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "forgot-password for rate limit"))
+        data = resp.json()
+        dev_code = data.get("dev_code")
+        print(f"  ✓ Got dev_code: {dev_code}")
     except Exception as e:
-        result.add_fail("AI Create", f"Exception: {str(e)}")
-        return False
+        print(f"  ✗ ERROR getting reset code: {e}")
+        results.append(("Step 10: Rate limit setup", "ERROR", str(e), None))
+        return results, security_issues
+    
+    # Try wrong code 5 times
+    print("\n  Attempting 5 wrong codes...")
+    last_response = None
+    for i in range(1, 7):  # Try up to 6 times to trigger 429
+        payload = {"email": TEST_EMAIL, "code": "111111", "new_password": TEST_PASSWORD}
+        try:
+            resp = requests.post(f"{BASE_URL}/auth/reset-password", json=payload, timeout=30)
+            security_issues.extend(check_security(resp.text, f"reset-password attempt {i}"))
+            last_response = resp
+            print(f"  Attempt {i}: Status {resp.status_code} - {resp.json()}")
+            
+            if resp.status_code == 429:
+                results.append(("Step 10: Rate limit (5 attempts)", resp.status_code, "PASS", resp.json()))
+                print(f"  ✓ Rate limit triggered at attempt {i}")
+                break
+            elif i >= 5 and resp.status_code == 400 and "0 attempts left" in resp.text.lower():
+                # After 5 attempts, the next attempt should return 429, but if it says "0 attempts left" that's also acceptable
+                results.append(("Step 10: Rate limit (5 attempts)", resp.status_code, "PASS - 0 attempts left", resp.json()))
+                print(f"  ✓ Rate limit enforced (0 attempts left)")
+                break
+        except Exception as e:
+            print(f"  ✗ ERROR on attempt {i}: {e}")
+            results.append(("Step 10: Rate limit attempt", "ERROR", str(e), None))
+            break
+    else:
+        # If we got through all 6 attempts without 429 or "0 attempts left"
+        if last_response:
+            results.append(("Step 10: Rate limit (5 attempts)", last_response.status_code, "FAIL - expected 429 or 0 attempts left", last_response.json()))
+    
+    # Reset password back to Test1234 for future tests
+    print("\n  Resetting password back to Test1234...")
+    print("  Making one more attempt to trigger 429 and clear the exhausted OTP...")
+    try:
+        # Make 6th attempt to trigger 429 and delete the exhausted OTP record
+        payload = {"email": TEST_EMAIL, "code": "111111", "new_password": TEST_PASSWORD}
+        resp = requests.post(f"{BASE_URL}/auth/reset-password", json=payload, timeout=30)
+        print(f"  6th attempt: Status {resp.status_code} - {resp.json()}")
+        
+        # Now get fresh code
+        resp = requests.post(f"{BASE_URL}/auth/forgot-password", json={"email": TEST_EMAIL}, timeout=30)
+        security_issues.extend(check_security(resp.text, "forgot-password final"))
+        new_code = resp.json().get("dev_code")
+        print(f"  ✓ Got new dev_code: {new_code}")
+        
+        # Reset with correct code
+        payload = {"email": TEST_EMAIL, "code": new_code, "new_password": TEST_PASSWORD}
+        resp = requests.post(f"{BASE_URL}/auth/reset-password", json=payload, timeout=30)
+        security_issues.extend(check_security(resp.text, "reset-password final"))
+        print(f"  ✓ Reset status: {resp.status_code} - {resp.json()}")
+        
+        # Verify login works
+        resp = requests.post(f"{BASE_URL}/auth/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD}, timeout=30)
+        security_issues.extend(check_security(resp.text, "login final"))
+        if resp.status_code == 200:
+            print(f"  ✓ Login verified: {resp.status_code}")
+            results.append(("Step 10: Reset password", resp.status_code, "PASS - password restored", resp.json()))
+        else:
+            print(f"  ✗ Login failed: {resp.status_code}")
+            results.append(("Step 10: Reset password", resp.status_code, "FAIL - login failed", resp.json()))
+    except Exception as e:
+        print(f"  ✗ ERROR resetting password: {e}")
+        results.append(("Step 10: Reset password", "ERROR", str(e), None))
+    
+    return results, security_issues
 
-def test_insights(token, result):
-    """Test 9: GET /api/ai/insights"""
-    print("\n[9] Testing GET /api/ai/insights...")
-    try:
-        response = requests.get(
-            f"{BASE_URL}/ai/insights",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30
-        )
-        
-        check_for_leaks(response.text, "Insights", result)
-        
-        if response.status_code == 200:
-            data = response.json()
-            # Check for expected numeric counters
-            expected_keys = ["unread", "important", "pending_tasks", "reminders", "creations", "pending_replies"]
-            if all(k in data for k in expected_keys):
-                result.add_pass("Insights", f"Status {response.status_code}, all counters present")
-                return True
-            else:
-                result.add_fail("Insights", f"Status {response.status_code} but missing expected counters")
-                return False
-        else:
-            result.add_fail("Insights", f"Status {response.status_code}: {response.text[:200]}")
-            return False
-    except Exception as e:
-        result.add_fail("Insights", f"Exception: {str(e)}")
-        return False
-
-def test_unauthorized_access(result):
-    """Test 10: Negative test - unauthorized access"""
-    print("\n[10] Testing unauthorized access (no token)...")
-    try:
-        response = requests.post(
-            f"{BASE_URL}/ai/chat",
-            json={"message": "test"},
-            timeout=30
-        )
-        
-        check_for_leaks(response.text, "Unauthorized Access", result)
-        
-        if response.status_code in [401, 403]:
-            result.add_pass("Unauthorized Access", f"Status {response.status_code} (correctly rejected)")
-            return True
-        elif response.status_code == 500:
-            result.add_fail("Unauthorized Access", f"Status 500 (should be 401/403, not 500)")
-            return False
-        else:
-            result.add_fail("Unauthorized Access", f"Status {response.status_code} (expected 401/403)")
-            return False
-    except Exception as e:
-        result.add_fail("Unauthorized Access", f"Exception: {str(e)}")
-        return False
+def print_summary(all_results, all_security_issues):
+    """Print test summary table"""
+    print("\n" + "="*100)
+    print("TEST SUMMARY")
+    print("="*100)
+    print(f"{'Step':<50} {'Status':<10} {'Result':<15} {'Notes':<25}")
+    print("-"*100)
+    
+    for step, status, result, data in all_results:
+        notes = ""
+        if isinstance(data, dict):
+            if "dev_code" in data:
+                notes = f"dev_code: {data['dev_code']}"
+            elif "token" in data:
+                notes = "token received"
+            elif "status" in data:
+                notes = data["status"]
+        print(f"{step:<50} {str(status):<10} {result:<15} {notes:<25}")
+    
+    print("\n" + "="*100)
+    print("SECURITY CHECK")
+    print("="*100)
+    if all_security_issues:
+        print("❌ SECURITY ISSUES FOUND:")
+        for issue in all_security_issues:
+            print(f"  - {issue}")
+    else:
+        print("✅ NO SECURITY LEAKS DETECTED (no Traceback, sk_, tvly, sk-emergent in responses)")
+    
+    print("\n" + "="*100)
+    
+    # Count pass/fail
+    passed = sum(1 for _, _, result, _ in all_results if "PASS" in result)
+    failed = sum(1 for _, _, result, _ in all_results if "FAIL" in result)
+    errors = sum(1 for _, _, result, _ in all_results if "ERROR" in result)
+    skipped = sum(1 for _, _, result, _ in all_results if "SKIP" in result)
+    
+    print(f"\nTOTAL: {len(all_results)} tests")
+    print(f"✅ PASSED: {passed}")
+    print(f"❌ FAILED: {failed}")
+    print(f"⚠️  ERRORS: {errors}")
+    print(f"⏭️  SKIPPED: {skipped}")
+    print("="*100)
 
 def main():
-    print("="*80)
-    print("CHATLY AI MESSENGER - P0 BACKEND API TESTS")
-    print("Testing: Retry logic, Circuit breaker, Global error handling")
-    print("="*80)
+    print("="*100)
+    print("CHATLY AI MESSENGER - OTP AUTHENTICATION FLOW TESTING")
+    print("="*100)
+    print(f"Backend URL: {BASE_URL}")
+    print(f"Test email: {TEST_EMAIL}")
+    print(f"Demo email: {DEMO_EMAIL}")
+    print("="*100)
     
-    result = TestResult()
+    all_results = []
+    all_security_issues = []
     
-    # Test 1: Login
-    token = test_auth_login(result)
-    if not token:
-        print("\n❌ Cannot proceed without authentication token")
-        result.print_summary()
-        return 1
+    # Run all test flows
+    results, security = test_signup_verify_flow()
+    all_results.extend(results)
+    all_security_issues.extend(security)
     
-    # Test 2: Get chats
-    chat_id = test_get_chats(token, result)
+    results, security = test_resend_cooldown()
+    all_results.extend(results)
+    all_security_issues.extend(security)
     
-    # Test 3: AI Chat
-    test_ai_chat(token, result)
+    results, security = test_forgot_reset_flow()
+    all_results.extend(results)
+    all_security_issues.extend(security)
     
-    # Test 4: Smart Reply
-    test_smart_reply(token, chat_id, result)
+    results, security = test_rate_limit()
+    all_results.extend(results)
+    all_security_issues.extend(security)
     
-    # Test 5: Chat Brain
-    test_chat_brain(token, chat_id, result)
-    
-    # Test 6: Ask Chats
-    test_ask_chats(token, result)
-    
-    # Test 7: Research (Tavily)
-    test_research(token, result)
-    
-    # Test 8: AI Create
-    test_ai_create(token, result)
-    
-    # Test 9: Insights
-    test_insights(token, result)
-    
-    # Test 10: Unauthorized access
-    test_unauthorized_access(result)
+    # Restore demo@chatly.app password to Demo1234 (even though email provider blocks it, the password should be set)
+    print("\n=== CLEANUP: Restoring demo@chatly.app password ===\n")
+    try:
+        # Try to login with Demo1234 first
+        resp = requests.post(f"{BASE_URL}/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD}, timeout=30)
+        if resp.status_code == 200:
+            print(f"  ✓ demo@chatly.app password is already Demo1234")
+        else:
+            print(f"  ℹ demo@chatly.app login status: {resp.status_code}")
+            print(f"  Note: Email provider blocks demo@chatly.app, so password reset via OTP not possible")
+            print(f"  The seeded demo account should have Demo1234 as password by default")
+    except Exception as e:
+        print(f"  ℹ Could not verify demo@chatly.app: {e}")
     
     # Print summary
-    success = result.print_summary()
+    print_summary(all_results, all_security_issues)
     
-    return 0 if success else 1
+    # Exit with appropriate code
+    failed = sum(1 for _, _, result, _ in all_results if "FAIL" in result)
+    errors = sum(1 for _, _, result, _ in all_results if "ERROR" in result)
+    if failed > 0 or errors > 0 or all_security_issues:
+        sys.exit(1)
+    else:
+        sys.exit(0)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, Platform } from "react-native";
+import { View, ScrollView, TextInput, Pressable } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing, radius, fontSize } from "@/src/theme";
@@ -36,7 +37,7 @@ export default function AskChats() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <StackHeader title="Ask Your Chats" subtitle="Search across your conversations" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={insets.top + 50}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
           {!answer && !loading && (
             <View style={{ marginBottom: spacing.lg }}>
