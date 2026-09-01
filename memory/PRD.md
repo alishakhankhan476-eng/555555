@@ -43,6 +43,18 @@ Build "Chatly AI Messenger" — an AI-native real-time messaging + personal AI +
 - Voice messages: expo-audio record -> /api/chats/{id}/voice -> Whisper transcription; voice bubble + transcript; attachment AI applies.
 - Privacy Center: added attachments/images/documents/voice_messages/group_intelligence toggles. app.json camera/mic/photos permissions. Bundle IDs unchanged.
 
+## Implemented — Phase 3 (2026-06 / iteration 3): Calls + Call Intelligence
+- Real call SIGNALING over existing WebSocket (call_offer/answer/ice/hangup relayed to target) + REST call lifecycle: POST /api/calls, accept, reject, end (states ringing/connected/ended/missed/rejected), GET /api/calls (history) + GET /api/calls/{id}. Authorization: participant/membership checks; 401/404 guards.
+- Call History UI (Calls tab) with type icon, missed/duration, timestamp, AI indicator, call-back.
+- Global Call overlay (src/calls.tsx CallProvider): incoming/outgoing/connected UI, mute/speaker/camera/end controls, ring haptics. Voice/Video call buttons in chat header.
+- AI Call Intelligence: /api/calls/{id}/transcript (Whisper audio) + /transcript-text; /api/calls/{id}/ai actions summary(structured)/tasks/ask(with source); GET+DELETE transcript; /api/calls/search. Call Intelligence screen: record notes->transcribe, summary, detected action items -> create task/reminder/calendar (confirm only).
+- Calendar events collection: POST/GET /api/calendar. Call->calendar/reminder/task all require user confirmation.
+- Privacy: added call_intelligence/call_transcription/call_summary/call_memory toggles (gating enforced server-side; 403 when off). UI toggles added.
+- LIMITATION: real WebRTC audio/video MEDIA requires a native device build (react-native-webrtc unavailable in Expo Go/web). Signaling + sessions + history + AI are fully real and tested; media layer activates on device builds.
+
+## Testing (iteration 3)
+- Backend 28/28 Phase 3 + regression pass. Frontend call surfaces verified. Report: /app/test_reports/iteration_3.json.
+
 ## Testing (iteration 2)
 - Backend 35/35 after contacts-seed fix. Frontend Phase-1/2 surfaces verified. Report: /app/test_reports/iteration_2.json.
 

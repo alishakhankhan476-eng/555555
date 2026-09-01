@@ -7,6 +7,9 @@ import { api } from "@/src/api";
 
 const PERMS: { key: string; label: string; icon: string }[] = [
   { key: "messages", label: "Read Chats", icon: "chatbubbles-outline" },
+  { key: "call_intelligence", label: "Call Intelligence", icon: "call-outline" },
+  { key: "call_transcription", label: "Call Transcription", icon: "mic-circle-outline" },
+  { key: "call_summary", label: "Call Summary", icon: "reader-outline" },
   { key: "attachments", label: "Attachments", icon: "attach-outline" },
   { key: "images", label: "Image Analysis", icon: "image-outline" },
   { key: "documents", label: "Document Analysis", icon: "document-outline" },

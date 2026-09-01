@@ -13,6 +13,7 @@ import productivity_routes
 import social_routes
 import groups_routes
 import files_routes
+import calls_routes
 from storage_service import init_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -36,6 +37,7 @@ app.include_router(productivity_routes.router)
 app.include_router(social_routes.router)
 app.include_router(groups_routes.router)
 app.include_router(files_routes.router)
+app.include_router(calls_routes.router)
 
 
 @app.websocket("/api/ws")
@@ -49,9 +51,16 @@ async def websocket_endpoint(ws: WebSocket, token: str = Query(...)):
     try:
         while True:
             data = await ws.receive_json()
-            # optional client-driven typing relay
-            if data.get("type") == "ping":
+            t = data.get("type")
+            if t == "ping":
                 await ws.send_json({"type": "pong"})
+            elif t in ("call_offer", "call_answer", "call_ice", "call_hangup", "call_ringing"):
+                # Relay WebRTC signaling to the target participant(s). The backend
+                # never trusts client participant IDs beyond routing; call authorization
+                # is enforced by the REST /api/calls endpoints and the DB session.
+                to = data.get("to")
+                if to:
+                    await manager.send_to_user(to, {**data, "from": user_id})
     except WebSocketDisconnect:
         pass
     except Exception as e:

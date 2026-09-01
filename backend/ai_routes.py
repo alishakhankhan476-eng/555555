@@ -426,6 +426,10 @@ class PrivacyBody(BaseModel):
     voice_messages: bool | None = None
     attachments: bool | None = None
     group_intelligence: bool | None = None
+    call_intelligence: bool | None = None
+    call_transcription: bool | None = None
+    call_summary: bool | None = None
+    call_memory: bool | None = None
 
 
 @router.get("/privacy")
@@ -438,7 +442,9 @@ async def get_privacy(user: dict = Depends(get_current_user)):
     defaults = {"messages": True, "files": True, "memory": True, "contacts": True,
                 "location": False, "calendar": True, "web_search": True, "calls": False,
                 "images": True, "documents": True, "voice_messages": True,
-                "attachments": True, "group_intelligence": True}
+                "attachments": True, "group_intelligence": True,
+                "call_intelligence": True, "call_transcription": True,
+                "call_summary": True, "call_memory": True}
     for k, v in defaults.items():
         p.setdefault(k, v)
     return {"privacy": p}

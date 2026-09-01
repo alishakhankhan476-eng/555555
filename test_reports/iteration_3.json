@@ -1,0 +1,51 @@
+{
+  "summary": "Phase 3 (Calls signaling + Call AI Intelligence + privacy + calendar) tested end-to-end plus Phase 1/2 regression. Backend: 28 new pytest cases in /app/backend/tests/test_phase3_calls.py — call lifecycle (start voice/video, accept, reject, end, ringing->missed, get, history newest-first with peer/direction/has_transcript), authorization (401 without bearer on GET/POST /calls*, 404 for foreign chat_id, 404 for non-participant), AI intelligence via transcript-text (get transcript, summary with full schema keys summary/key_points/decisions/action_items/deadlines/follow_ups/questions, tasks items with type/title/owner/when, ask with answer+source, delete transcript, search matches), privacy defaults (call_intelligence/call_transcription/call_summary/call_memory all true), privacy gate flips POST /calls/{id}/ai to 403 and re-enable restores 200, calendar POST/GET, and Phase 1/2 regression (login, chats, send message, smart-reply, chat-brain summary, ai/chat, user search, contacts/list>=3). 28/28 passed = 100% (two AI cases hit transient Cloudflare 502 on first run when LLM took >100s; passed cleanly on rerun). Frontend (Expo web, 390x844): Calls tab shows history rows call-<call_id> with type icon (voice/video), missed vs duration (e.g., '1 min'), timestamp, and AI sparkles when has_transcript is true. Chat header of Rahul DM has voice-call-button, video-call-button, chat-brain-button. Tapping voice-call-button opens the outgoing call overlay with 'Calling…' + Rahul avatar/name and an End button; ending returns to chat. Privacy screen shows Call Intelligence / Call Transcription / Call Summary toggles (+ general Calls, Memory). Call Intelligence screen (/call-intelligence/[id]) renders Transcript block, Summary button (gen-summary), Action Items (gen-tasks), delete-transcript, and call-ask-input + call-ask-submit; call-notes-input + save-notes testIDs exist when no transcript. No red screen, no deprecated Expo packages detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/calls/{id}/ai", "issue": "LLM (summary/tasks) can take 60-100s+ under load; the Cloudflare edge returned 502 on 2/28 requests in one run but the same call succeeded on retry. Consider a shorter model timeout + graceful retry on the server, or streaming."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "OutgoingCallOverlay end button", "issue": "Review request specified testID='end-call-button' but the rendered testID is 'end-call'. Functionally correct — cosmetic inconsistency only.", "testID": "end-call", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Privacy & Security", "issues": ["Backend privacy has a distinct key `call_memory` (default true) but the Privacy UI does not surface a dedicated 'Call Memory' toggle — only a general 'Memory' toggle plus 'Calls' toggle. If call_memory is meant to be independently controllable per the spec, add a switch-call_memory row."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_calls.py",
+    "/app/test_reports/pytest/phase3_results.xml"
+  ],
+  "action_items": [
+    "(LOW) Rename end-call testID -> end-call-button, or update spec docs; either is fine but aligning would reduce future automation churn.",
+    "(LOW) Consider adding an explicit 'Call Memory' switch on Privacy screen matching the backend `call_memory` privacy key so users can toggle it independently.",
+    "(OPTIONAL) Add server-side retry/backoff on ai_json for /calls/{id}/ai to avoid transient 502s when LLM latency exceeds Cloudflare's timeout."
+  ],
+  "critical_code_review_comments": [
+    "calls_routes.py._call_for correctly filters by participants, so a non-participant reading /api/calls/{id} obscures existence with 404 — good.",
+    "calls_routes.py.start_call broadcasts an 'incoming_call' event via ws_manager.send_to_user to each callee (excluding caller) — matches spec.",
+    "calls_routes.py.end_call correctly computes duration from connected_at only, and marks ringing->missed if never connected — matches spec.",
+    "call_ai gates by privacy.call_intelligence (403), further gates 'summary' by privacy.call_summary. transcript upload gates by call_transcription. Consistent with privacy toggles.",
+    "call_ai enforces 'no transcript => 400' before calling LLM — avoids wasted tokens/hallucination — good.",
+    "ai_json prompt embeds transcript verbatim and instructs the model to never invent info + cite the call — good hallucination guard.",
+    "calls_routes.py properly excludes MongoDB _id in every read (find_one/find with projection {_id:0}) — good.",
+    "calls_routes.py.search_calls only searches calls where participant matches, so cross-tenant leaks are impossible."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_calls.py",
+    "/app/test_reports/pytest/phase3_results.xml",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 Phase-3 tests including regression subset). 2 tests briefly failed with Cloudflare 502 on first run due to LLM latency; both passed on retry.",
+    "frontend": "100% of Phase-3 UI surfaces verified: Calls tab with type/missed/duration/sparkles, chat header voice/video/brain call buttons, outgoing call overlay + End, Privacy call toggles (Intelligence/Transcription/Summary), Call Intelligence screen (transcript, summary, tasks, ask, delete)."
+  },
+  "seed_data_creation": "Created transient TEST calls in the demo account (voice + video, various statuses) and one call with transcript ('Alice: ... Rahul: budget 50k ...') used by the CI screen verification (call_65597a14c5194dc3). Also created TEST_Meeting_* calendar events. All items are demo-account-scoped and prefixed TEST_ where user-visible.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use demo@chatly.app / Demo1234. BASE URL from frontend/.env EXPO_PUBLIC_BACKEND_URL. Phase-3 pytest lives at /app/backend/tests/test_phase3_calls.py (~2m30s incl. LLM calls, 28/28). Real WebRTC media (audio/video streams) NOT testable in Expo web — only signaling + REST are covered. Media transcription via /api/calls/{id}/transcript (multipart audio) is available but was tested through /transcript-text which is the deterministic path. If retesting call AI, allow generous timeouts (60-120s) — Cloudflare may 502 the first hit if LLM is slow. Frontend testIDs: login-email-input/login-password-input/login-submit-button, calls tab rows call-<call_id> and callback-<call_id>, chat header voice-call-button/video-call-button/chat-brain-button, overlay end-call (not end-call-button), CI screen gen-summary/gen-tasks/delete-transcript/call-ask-input/call-ask-submit/call-notes-input/save-notes, privacy switch-call_intelligence/switch-call_transcription/switch-call_summary/switch-calls."
+}

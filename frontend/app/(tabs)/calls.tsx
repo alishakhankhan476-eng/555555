@@ -1,66 +1,72 @@
 import { useState, useCallback } from "react";
-import { View, ScrollView, StyleSheet } from "react-native";
+import { View, ScrollView, Pressable, StyleSheet, RefreshControl } from "react-native";
+import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing, radius } from "@/src/theme";
-import { AppText, Avatar, Icon, EmptyState, useToast } from "@/src/ui";
+import { AppText, Avatar, Icon, EmptyState, Loading } from "@/src/ui";
 import { api } from "@/src/api";
+import { useCall } from "@/src/calls";
+import dayjs from "dayjs";
 
 export default function Calls() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const toast = useToast();
-  const [contacts, setContacts] = useState<any[]>([]);
+  const router = useRouter();
+  const { startCall } = useCall();
+  const [calls, setCalls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { const res = await api.get("/contacts"); setContacts(res.contacts.filter((c: any) => c.is_bot)); } catch {}
+    try { const res = await api.get("/calls"); setCalls(res.calls); } catch {} finally { setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const types = ["missed", "incoming", "outgoing"];
+  const meta = (c: any) => {
+    const missed = c.status === "missed" || c.status === "rejected";
+    const icon = c.direction === "incoming" ? "arrow-down-outline" : "arrow-up-outline";
+    const color = missed ? colors.error : colors.onSurfaceMuted;
+    const label = missed ? "Missed" : c.duration ? `${Math.max(1, Math.round(c.duration / 60))} min` : "Cancelled";
+    return { icon, color, label };
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
         <AppText size="xxxl" weight="heavy">Calls</AppText>
       </View>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        {contacts.length === 0 ? (
-          <EmptyState icon="call-outline" title="No calls yet" subtitle="Your voice and video calls will show up here." />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {contacts.map((c, i) => {
-              const t = types[i % 3];
-              return (
-                <View key={c.user_id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Avatar name={c.name} uri={c.avatar} size={48} />
-                  <View style={{ flex: 1, marginLeft: spacing.md }}>
-                    <AppText weight="semibold">{c.name}</AppText>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-                      <Icon name={t === "missed" ? "arrow-down" : t === "incoming" ? "arrow-down-outline" : "arrow-up-outline"} size={14} color={t === "missed" ? colors.error : colors.onSurfaceMuted} />
-                      <AppText muted size="base" style={{ marginLeft: 4 }}>{t === "missed" ? "Missed" : t === "incoming" ? "Incoming" : "Outgoing"} · yesterday</AppText>
-                    </View>
+      {loading ? <Loading /> : calls.length === 0 ? (
+        <EmptyState icon="call-outline" title="No calls yet" subtitle="Start a voice or video call from any chat. Chatly can summarize it afterwards." />
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xl }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+          {calls.map((c) => {
+            const m = meta(c);
+            return (
+              <Pressable key={c.call_id} testID={`call-${c.call_id}`} onPress={() => c.has_transcript ? router.push({ pathname: "/call-intelligence/[id]", params: { id: c.call_id } }) : c.peer.user_id && startCall(c.chat_id, c.peer.name, c.type)} style={styles.row}>
+                <Avatar name={c.peer?.name} uri={c.peer?.avatar} size={50} />
+                <View style={{ flex: 1, marginLeft: spacing.md }}>
+                  <AppText weight="semibold" size="lg" color={c.status === "missed" ? colors.error : colors.onSurface}>{c.peer?.name}</AppText>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+                    <Icon name={m.icon as any} size={13} color={m.color} />
+                    <Icon name={c.type === "video" ? "videocam" : "call"} size={13} color={m.color} />
+                    <AppText size="base" muted style={{ marginLeft: 6 }}>{m.label} · {dayjs(c.started_at).format("DD MMM, HH:mm")}</AppText>
                   </View>
-                  <Icon name="videocam-outline" size={22} color={colors.brandPrimary} />
-                  <View style={{ width: spacing.lg }} />
-                  <Icon name="call-outline" size={22} color={colors.brandPrimary} />
                 </View>
-              );
-            })}
-          </View>
-        )}
-        <View style={[styles.note, { backgroundColor: colors.brandTertiary }]}>
-          <Icon name="information-circle-outline" size={18} color={colors.brandPrimary} />
-          <AppText size="base" color={colors.onBrandTertiary} style={{ flex: 1, marginLeft: 8 }}>
-            Live voice & video calls activate on a device build. The AI Call Assistant will transcribe and summarize your calls.
-          </AppText>
-        </View>
-      </ScrollView>
+                {c.has_transcript && <View style={{ marginRight: spacing.md }}><Icon name="sparkles" size={18} color={colors.brandPrimary} /></View>}
+                <Pressable testID={`callback-${c.call_id}`} onPress={() => c.peer.user_id && startCall(c.chat_id, c.peer.name, c.type)} hitSlop={8}>
+                  <Icon name={c.type === "video" ? "videocam-outline" : "call-outline"} size={22} color={colors.brandPrimary} />
+                </Pressable>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", padding: spacing.md, borderRadius: radius.lg, borderWidth: 1 },
-  note: { flexDirection: "row", alignItems: "flex-start", padding: spacing.md, borderRadius: radius.md, marginTop: spacing.xl },
+  row: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md },
 });

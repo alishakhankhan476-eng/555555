@@ -13,6 +13,7 @@ import { AppText, Avatar, Icon, Loading, useToast } from "@/src/ui";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useWs } from "@/src/ws";
+import { useCall } from "@/src/calls";
 import { fileUrl, pickImageFromLibrary, captureImage, pickDocument, uploadImage, uploadDocument, uploadVoice } from "@/src/upload";
 import dayjs from "dayjs";
 
@@ -59,6 +60,7 @@ export default function ChatScreen() {
   const { id, name, group } = useLocalSearchParams<{ id: string; name: string; group?: string }>();
   const { user, token } = useAuth();
   const { subscribe, send } = useWs();
+  const { startCall } = useCall();
   const isGroup = group === "1" || String(id).startsWith("group_");
 
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -356,6 +358,12 @@ export default function ChatScreen() {
             <AppText weight="bold" size="lg" numberOfLines={1}>{name}</AppText>
             <AppText size="sm" color={otherTyping ? colors.brandPrimary : colors.onSurfaceMuted}>{isGroup ? "Tap for group info" : otherTyping ? "typing…" : "online"}</AppText>
           </View>
+        </Pressable>
+        <Pressable testID="voice-call-button" onPress={() => startCall(String(id), String(name), "voice")} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: 2 }}>
+          <Icon name="call" size={22} color={colors.brandPrimary} />
+        </Pressable>
+        <Pressable testID="video-call-button" onPress={() => startCall(String(id), String(name), "video")} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: 2 }}>
+          <Icon name="videocam" size={22} color={colors.brandPrimary} />
         </Pressable>
         <Pressable testID="chat-brain-button" onPress={() => { setBrainOpen(true); setAiResult(null); }} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
           <Icon name="sparkles" size={20} color={colors.brandPrimary} />

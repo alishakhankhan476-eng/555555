@@ -11,6 +11,7 @@ import { ThemeProvider, useTheme } from "@/src/theme";
 import { AuthProvider } from "@/src/auth";
 import { WsProvider } from "@/src/ws";
 import { ToastProvider } from "@/src/ui";
+import { CallProvider } from "@/src/calls";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
@@ -36,14 +37,16 @@ export default function RootLayout() {
           <AuthProvider>
             <WsProvider>
               <ToastProvider>
-                <ThemedStatusBar />
-                <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
-                  <Stack.Screen name="index" />
-                  <Stack.Screen name="(auth)" />
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="chat/[id]" />
-                  <Stack.Screen name="assistant" options={{ presentation: "card" }} />
-                </Stack>
+                <CallProvider>
+                  <ThemedStatusBar />
+                  <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
+                    <Stack.Screen name="index" />
+                    <Stack.Screen name="(auth)" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="chat/[id]" />
+                    <Stack.Screen name="assistant" options={{ presentation: "card" }} />
+                  </Stack>
+                </CallProvider>
               </ToastProvider>
             </WsProvider>
           </AuthProvider>
