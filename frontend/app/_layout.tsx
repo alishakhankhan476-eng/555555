@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StatusBar } from "expo-status-bar";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
@@ -33,24 +34,26 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <WsProvider>
-              <ToastProvider>
-                <CallProvider>
-                  <ThemedStatusBar />
-                  <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
-                    <Stack.Screen name="index" />
-                    <Stack.Screen name="(auth)" />
-                    <Stack.Screen name="(tabs)" />
-                    <Stack.Screen name="chat/[id]" />
-                    <Stack.Screen name="assistant" options={{ presentation: "card" }} />
-                  </Stack>
-                </CallProvider>
-              </ToastProvider>
-            </WsProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <KeyboardProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <WsProvider>
+                <ToastProvider>
+                  <CallProvider>
+                    <ThemedStatusBar />
+                    <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
+                      <Stack.Screen name="index" />
+                      <Stack.Screen name="(auth)" />
+                      <Stack.Screen name="(tabs)" />
+                      <Stack.Screen name="chat/[id]" />
+                      <Stack.Screen name="assistant" options={{ presentation: "card" }} />
+                    </Stack>
+                  </CallProvider>
+                </ToastProvider>
+              </WsProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

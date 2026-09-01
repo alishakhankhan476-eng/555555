@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  View, FlatList, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet,
+  View, FlatList, Pressable, TextInput, Platform, ScrollView, ActivityIndicator, StyleSheet,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing, radius, fontSize } from "@/src/theme";
@@ -51,7 +52,7 @@ export default function Assistant() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <StackHeader title="Chatly" subtitle="AI Assistant" right={<Icon name="sparkles" size={22} color={colors.brandPrimary} />} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={insets.top + 50}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
         {turns.length === 0 ? (
           <ScrollView contentContainerStyle={{ padding: spacing.xl, flexGrow: 1, justifyContent: "center" }}>
             <View style={{ alignItems: "center", marginBottom: spacing.xl }}>

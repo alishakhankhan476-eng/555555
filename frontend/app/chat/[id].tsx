@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  View, FlatList, Pressable, TextInput, StyleSheet, KeyboardAvoidingView,
+  View, FlatList, Pressable, TextInput, StyleSheet,
   Platform, Modal, ScrollView, ActivityIndicator, Linking,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -370,7 +371,7 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={insets.top + 50}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
         {loading ? <Loading /> : (
           <FlatList
             data={messages}
