@@ -1,6 +1,8 @@
 import uuid
 import secrets
 import logging
+import os
+import httpx
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr, Field
@@ -222,6 +224,60 @@ async def reset_password(body: ResetBody):
 @router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
     return {"user": _public_user(user)}
+
+
+class SessionBody(BaseModel):
+    session_id: str
+
+
+@router.post("/session")
+async def google_session(body: SessionBody):
+    """Exchange an Emergent Google OAuth session_id for a Chatly JWT.
+    Upserts by email so the same Google account never creates a duplicate."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            resp = await c.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": body.session_id},
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+        data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google session exchange failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Google sign-in service.")
+
+    email = (data.get("email") or "").lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="Google account has no email.")
+    name = data.get("name") or email.split("@")[0]
+    picture = data.get("picture")
+
+    user = await db.users.find_one({"email": email, "deleted_at": None})
+    if user:
+        updates = {"email_verified": True, "last_seen": _now()}
+        if picture and not user.get("avatar"):
+            updates["avatar"] = picture
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
+        user = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    else:
+        user_id = str(uuid.uuid4())
+        username = email.split("@")[0] + secrets.token_hex(2)
+        user = {
+            "user_id": user_id, "name": name, "email": email, "username": username,
+            "bio": "", "avatar": picture, "password": None, "email_verified": True,
+            "auth_provider": "google", "online": False, "last_seen": _now(),
+            "created_at": _now(), "deleted_at": None,
+        }
+        await db.users.insert_one(dict(user))
+        await db.privacy.update_one({"user_id": user_id}, {"$setOnInsert": {
+            "user_id": user_id, "messages": True, "files": True, "memory": True, "contacts": True,
+            "location": False, "calendar": True, "web_search": True, "calls": False,
+            "images": True, "documents": True}}, upsert=True)
+    token = create_token(user["user_id"])
+    return {"token": token, "user": _public_user(user)}
 
 
 class ProfileBody(BaseModel):

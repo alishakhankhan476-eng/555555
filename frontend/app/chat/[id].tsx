@@ -1,22 +1,26 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, FlatList, Pressable, TextInput, StyleSheet, KeyboardAvoidingView,
-  Platform, Modal, ScrollView, ActivityIndicator,
+  Platform, Modal, ScrollView, ActivityIndicator, Linking,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets, AudioModule, setAudioModeAsync } from "expo-audio";
 import { useTheme, spacing, radius, fontSize } from "@/src/theme";
 import { AppText, Avatar, Icon, Loading, useToast } from "@/src/ui";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useWs } from "@/src/ws";
+import { fileUrl, pickImageFromLibrary, captureImage, pickDocument, uploadImage, uploadDocument, uploadVoice } from "@/src/upload";
 import dayjs from "dayjs";
 
 type Msg = {
   message_id: string; chat_id: string; sender_id: string; text: string;
   status: string; reactions: Record<string, string>; starred_by: string[];
   edited: boolean; deleted: boolean; created_at: string; reply_to?: string | null;
+  type?: string; attachment?: any;
 };
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "🙏", "🔥"];
@@ -26,6 +30,17 @@ const MSG_ACTIONS = [
   { key: "summarize", label: "Summarize", icon: "document-text-outline" },
   { key: "translate", label: "Translate", icon: "language-outline" },
   { key: "rewrite", label: "Draft a Reply", icon: "return-up-forward-outline" },
+];
+
+const ATT_ACTIONS = [
+  { key: "summarize", label: "Summarize", icon: "document-text-outline" },
+  { key: "explain", label: "Explain", icon: "bulb-outline" },
+  { key: "find_amount", label: "Find Amounts", icon: "cash-outline" },
+  { key: "find_dates", label: "Find Dates", icon: "calendar-outline" },
+  { key: "extract", label: "Extract Info", icon: "list-outline" },
+  { key: "translate", label: "Translate", icon: "language-outline" },
+  { key: "create_task", label: "Create Task", icon: "checkbox-outline" },
+  { key: "create_notes", label: "Create Notes", icon: "reader-outline" },
 ];
 
 const BRAIN_ACTIONS = [
@@ -41,11 +56,17 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
-  const { id, name } = useLocalSearchParams<{ id: string; name: string }>();
-  const { user } = useAuth();
+  const { id, name, group } = useLocalSearchParams<{ id: string; name: string; group?: string }>();
+  const { user, token } = useAuth();
   const { subscribe, send } = useWs();
+  const isGroup = group === "1" || String(id).startsWith("group_");
 
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recState = useAudioRecorderState(recorder);
+  const recStart = useRef<number>(0);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [otherTyping, setOtherTyping] = useState(false);
@@ -188,7 +209,77 @@ export default function ChatScreen() {
     catch (e: any) { toast.show(e.message, "error"); }
   };
 
+  const doUpload = async (fn: () => Promise<any>) => {
+    setAttachOpen(false); setUploading(true);
+    try {
+      const res = await fn();
+      if (res?.message) setMessages((p) => [...p, res.message]);
+    } catch (e: any) {
+      if (String(e.message).includes("permission")) toast.show("Permission needed to continue", "error");
+      else toast.show(e.message || "Upload failed", "error");
+    } finally { setUploading(false); }
+  };
+
+  const onPickImage = () => doUpload(async () => {
+    const r = await pickImageFromLibrary();
+    if (r.canceled) return null;
+    return uploadImage(String(id), r.assets[0]);
+  });
+  const onCamera = () => doUpload(async () => {
+    const r = await captureImage();
+    if (r.canceled) return null;
+    return uploadImage(String(id), r.assets[0]);
+  });
+  const onPickDoc = () => doUpload(async () => {
+    const r = await pickDocument();
+    if (r.canceled) return null;
+    return uploadDocument(String(id), r.assets[0]);
+  });
+
+  const startRecording = async () => {
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) { toast.show("Microphone permission needed", "error"); return; }
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      recStart.current = Date.now();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch { toast.show("Could not start recording", "error"); }
+  };
+  const stopRecording = async (cancel = false) => {
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      const dur = (Date.now() - recStart.current) / 1000;
+      if (cancel || !uri || dur < 1) return;
+      setUploading(true);
+      const res = await uploadVoice(String(id), uri, dur);
+      if (res?.message) setMessages((p) => [...p, res.message]);
+    } catch (e: any) { toast.show("Voice send failed", "error"); }
+    finally { setUploading(false); }
+  };
+
+  const runAttachmentAI = async (action: string) => {
+    if (!selected) return;
+    setAiLoading(true); setAiResult({ title: "Chatly", body: "" });
+    try {
+      const res = await api.post<{ result: string; source: string }>("/ai/attachment", { message_id: selected.message_id, action });
+      const titles: any = { summarize: "Summary", explain: "Explanation", translate: "Translation", find_amount: "Amounts", find_dates: "Dates", extract: "Extracted Info", create_task: "Task", create_notes: "Notes" };
+      setAiResult({ title: titles[action] || "Chatly", body: res.result + (res.source ? `\n\nSource: ${res.source}` : "") });
+    } catch (e: any) { setAiResult({ title: "Error", body: e.message }); }
+    finally { setAiLoading(false); }
+  };
+
+  const openFile = (att: any) => {
+    if (!token) return;
+    Linking.openURL(fileUrl(att.storage_path, token));
+  };
+
   const renderMsg = ({ item }: { item: Msg }) => {
+    if (item.type === "system") {
+      return <View style={{ alignItems: "center", marginVertical: spacing.sm }}><View style={{ backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 }}><AppText size="xs" muted>{item.text}</AppText></View></View>;
+    }
     const mine = item.sender_id === user?.user_id;
     const reactionList = Object.values(item.reactions || {});
     return (
@@ -201,9 +292,42 @@ export default function ChatScreen() {
           borderColor: colors.border, borderWidth: mine ? 0 : 1,
           borderBottomRightRadius: mine ? 4 : radius.lg, borderBottomLeftRadius: mine ? radius.lg : 4,
         }]}>
-          <AppText size="md" color={mine ? colors.onBubbleOut : colors.onCard} style={{ fontStyle: item.deleted ? "italic" : "normal", opacity: item.deleted ? 0.7 : 1 }}>
-            {item.text}
-          </AppText>
+          {isGroup && !mine && (
+            <AppText size="xs" weight="bold" color={colors.brandPrimary} style={{ marginBottom: 2 }}>{item.sender_id.slice(0, 6)}</AppText>
+          )}
+          {item.attachment?.kind === "image" && (
+            <Pressable onPress={() => openFile(item.attachment)}>
+              <Image source={{ uri: token ? fileUrl(item.attachment.storage_path, token) : undefined }} style={{ width: 220, height: 220, borderRadius: radius.md, marginBottom: item.text ? 6 : 0 }} contentFit="cover" />
+            </Pressable>
+          )}
+          {item.attachment?.kind === "file" && (
+            <Pressable onPress={() => openFile(item.attachment)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 4, minWidth: 200 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: mine ? "rgba(255,255,255,0.2)" : colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="document-text" size={20} color={mine ? "#fff" : colors.brandPrimary} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <AppText size="base" weight="semibold" color={mine ? "#fff" : colors.onCard} numberOfLines={1}>{item.attachment.filename}</AppText>
+                <AppText size="xs" color={mine ? "rgba(255,255,255,0.7)" : colors.onSurfaceMuted}>{Math.max(1, Math.round((item.attachment.size || 0) / 1024))} KB</AppText>
+              </View>
+            </Pressable>
+          )}
+          {item.attachment?.kind === "voice" && (
+            <View style={{ minWidth: 210 }}>
+              <Pressable onPress={() => openFile(item.attachment)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 4 }}>
+                <Icon name="play-circle" size={34} color={mine ? "#fff" : colors.brandPrimary} />
+                <View style={{ flex: 1, height: 3, backgroundColor: mine ? "rgba(255,255,255,0.4)" : colors.border, marginHorizontal: 10, borderRadius: 2 }} />
+                <AppText size="sm" color={mine ? "rgba(255,255,255,0.9)" : colors.onSurfaceMuted}>{Math.round(item.attachment.duration || 0)}s</AppText>
+              </Pressable>
+              {item.attachment.transcript ? (
+                <AppText size="base" color={mine ? "rgba(255,255,255,0.95)" : colors.onCard} style={{ marginTop: 4, fontStyle: "italic" }}>“{item.attachment.transcript}”</AppText>
+              ) : null}
+            </View>
+          )}
+          {!!item.text && (
+            <AppText size="md" color={mine ? colors.onBubbleOut : colors.onCard} style={{ fontStyle: item.deleted ? "italic" : "normal", opacity: item.deleted ? 0.7 : 1 }}>
+              {item.text}
+            </AppText>
+          )}
           <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-end", marginTop: 3 }}>
             {item.edited && !item.deleted && <AppText size="xs" color={mine ? "rgba(255,255,255,0.7)" : colors.onSurfaceMuted}>edited · </AppText>}
             <AppText size="xs" color={mine ? "rgba(255,255,255,0.7)" : colors.onSurfaceMuted}>{dayjs(item.created_at).format("HH:mm")}</AppText>
@@ -226,11 +350,13 @@ export default function ChatScreen() {
         <Pressable testID="chat-back" onPress={() => router.back()} hitSlop={10} style={{ marginRight: 6 }}>
           <Icon name="chevron-back" size={28} />
         </Pressable>
-        <Avatar name={String(name)} size={40} online />
-        <View style={{ flex: 1, marginLeft: spacing.sm }}>
-          <AppText weight="bold" size="lg" numberOfLines={1}>{name}</AppText>
-          <AppText size="sm" color={otherTyping ? colors.brandPrimary : colors.onSurfaceMuted}>{otherTyping ? "typing…" : "online"}</AppText>
-        </View>
+        <Pressable onPress={() => isGroup && router.push({ pathname: "/group/[id]", params: { id: String(id), name: String(name) } })} style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+          <Avatar name={String(name)} size={40} online={!isGroup} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <AppText weight="bold" size="lg" numberOfLines={1}>{name}</AppText>
+            <AppText size="sm" color={otherTyping ? colors.brandPrimary : colors.onSurfaceMuted}>{isGroup ? "Tap for group info" : otherTyping ? "typing…" : "online"}</AppText>
+          </View>
+        </Pressable>
         <Pressable testID="chat-brain-button" onPress={() => { setBrainOpen(true); setAiResult(null); }} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
           <Icon name="sparkles" size={20} color={colors.brandPrimary} />
         </Pressable>
@@ -260,7 +386,10 @@ export default function ChatScreen() {
 
         {/* Composer */}
         <View style={{ flexDirection: "row", alignItems: "flex-end", paddingHorizontal: spacing.md, paddingBottom: insets.bottom + spacing.sm, paddingTop: spacing.sm, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <Pressable testID="smart-reply-button" onPress={fetchSmartReplies} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
+          <Pressable testID="attach-button" onPress={() => setAttachOpen(true)} style={{ width: 40, height: 42, alignItems: "center", justifyContent: "center" }}>
+            {uploading ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : <Icon name="add-circle-outline" size={26} color={colors.brandPrimary} />}
+          </Pressable>
+          <Pressable testID="smart-reply-button" onPress={fetchSmartReplies} style={{ width: 36, height: 42, alignItems: "center", justifyContent: "center" }}>
             {loadingReplies ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : <Icon name="sparkles" size={20} color={colors.brandPrimary} />}
           </Pressable>
           <View style={{ flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.xl, paddingHorizontal: spacing.md, minHeight: 42, justifyContent: "center", maxHeight: 120 }}>
@@ -268,15 +397,27 @@ export default function ChatScreen() {
               testID="message-input"
               value={text}
               onChangeText={onChangeText}
-              placeholder="Message"
+              placeholder={recState.isRecording ? "Recording…" : "Message"}
               placeholderTextColor={colors.onSurfaceMuted}
               multiline
+              editable={!recState.isRecording}
               style={{ color: colors.onSurface, fontSize: fontSize.lg, paddingVertical: Platform.OS === "ios" ? 10 : 6 }}
             />
           </View>
-          <Pressable testID="send-button" onPress={onSend} disabled={!text.trim()} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: text.trim() ? colors.brandPrimary : colors.surfaceTertiary, alignItems: "center", justifyContent: "center", marginLeft: 6 }}>
-            <Icon name="arrow-up" size={22} color={text.trim() ? "#fff" : colors.onSurfaceMuted} />
-          </Pressable>
+          {text.trim() ? (
+            <Pressable testID="send-button" onPress={onSend} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", marginLeft: 6 }}>
+              <Icon name="arrow-up" size={22} color="#fff" />
+            </Pressable>
+          ) : (
+            <Pressable
+              testID="voice-button"
+              onPressIn={startRecording}
+              onPressOut={() => stopRecording(false)}
+              style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: recState.isRecording ? colors.error : colors.brandPrimary, alignItems: "center", justifyContent: "center", marginLeft: 6 }}
+            >
+              <Icon name={recState.isRecording ? "stop" : "mic"} size={22} color="#fff" />
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
 
@@ -309,7 +450,12 @@ export default function ChatScreen() {
               </View>
               <View style={{ height: 1, backgroundColor: colors.divider, marginBottom: spacing.sm }} />
               <AppText weight="bold" size="sm" muted style={{ marginVertical: spacing.sm }}>ASK CHATLY</AppText>
-              {MSG_ACTIONS.map((a) => (
+              {selected?.attachment ? ATT_ACTIONS.map((a) => (
+                <Pressable key={a.key} testID={`att-action-${a.key}`} onPress={() => runAttachmentAI(a.key)} style={styles.actionRow}>
+                  <Icon name={a.icon as any} size={20} color={colors.brandPrimary} />
+                  <AppText style={{ marginLeft: spacing.md }} weight="medium">{a.label}</AppText>
+                </Pressable>
+              )) : MSG_ACTIONS.map((a) => (
                 <Pressable key={a.key} testID={`msg-action-${a.key}`} onPress={() => runMsgAction(a.key)} style={styles.actionRow}>
                   <Icon name={a.icon as any} size={20} color={colors.brandPrimary} />
                   <AppText style={{ marginLeft: spacing.md }} weight="medium">{a.label}</AppText>
@@ -335,6 +481,28 @@ export default function ChatScreen() {
               )}
             </ScrollView>
           )}
+        </View>
+      </Modal>
+
+      {/* Attachment options */}
+      <Modal visible={attachOpen} transparent animationType="slide" onRequestClose={() => setAttachOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: colors.overlay }} onPress={() => setAttachOpen(false)} />
+        <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + spacing.lg }]}>
+          <AppText weight="bold" size="lg" style={{ marginBottom: spacing.md }}>Share</AppText>
+          <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
+            {[
+              { key: "camera", label: "Camera", icon: "camera", onPress: onCamera },
+              { key: "gallery", label: "Photos", icon: "image", onPress: onPickImage },
+              { key: "document", label: "Document", icon: "document", onPress: onPickDoc },
+            ].map((o) => (
+              <Pressable key={o.key} testID={`attach-${o.key}`} onPress={o.onPress} style={{ alignItems: "center" }}>
+                <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
+                  <Icon name={o.icon as any} size={28} color={colors.brandPrimary} />
+                </View>
+                <AppText size="base" weight="semibold" style={{ marginTop: 8 }}>{o.label}</AppText>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </Modal>
 

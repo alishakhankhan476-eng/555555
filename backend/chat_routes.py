@@ -37,6 +37,10 @@ async def ensure_seed_chats(user_id: str):
     bots = db.users.find({"is_bot": True}, {"_id": 0})
     async for bot in bots:
         chat_id = _dm_id(user_id, bot["user_id"])
+        # ensure the bot is a saved contact both ways so the contacts list is populated
+        for x, y in ((user_id, bot["user_id"]), (bot["user_id"], user_id)):
+            await db.contacts.update_one({"user_id": x, "contact_id": y},
+                                         {"$setOnInsert": {"user_id": x, "contact_id": y, "created_at": _now()}}, upsert=True)
         if await db.chats.find_one({"chat_id": chat_id}):
             continue
         now = _now()
@@ -110,18 +114,15 @@ async def create_chat(body: CreateChatBody, user: dict = Depends(get_current_use
 
 
 async def _chat_view(chat: dict, me: str) -> dict:
-    others = [p for p in chat["participants"] if p != me]
-    other = await _user_public(others[0]) if others else None
     unread = await db.messages.count_documents({
         "chat_id": chat["chat_id"],
         "sender_id": {"$ne": me},
         "read_by": {"$ne": me},
         "deleted": {"$ne": True},
     })
-    return {
+    base = {
         "chat_id": chat["chat_id"],
         "type": chat["type"],
-        "other": other,
         "last_message": chat.get("last_message"),
         "last_ts": chat.get("last_ts"),
         "ai_enabled": chat.get("ai_enabled", True),
@@ -130,6 +131,14 @@ async def _chat_view(chat: dict, me: str) -> dict:
         "muted": me in chat.get("muted_by", []),
         "archived": me in chat.get("archived_by", []),
     }
+    if chat["type"] == "group":
+        base["other"] = {"user_id": chat["chat_id"], "name": chat.get("name", "Group"),
+                         "avatar": chat.get("avatar"), "is_group": True,
+                         "member_count": len(chat.get("participants", []))}
+    else:
+        others = [p for p in chat["participants"] if p != me]
+        base["other"] = await _user_public(others[0]) if others else None
+    return base
 
 
 @router.get("/chats")

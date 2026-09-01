@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { Platform } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { storage } from "@/src/utils/storage";
 import { api, TOKEN_KEY } from "@/src/api";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export type User = {
   user_id: string;
@@ -22,20 +27,70 @@ type AuthCtx = {
   resendOtp: (email: string) => Promise<void>;
   forgot: (email: string) => Promise<void>;
   reset: (email: string, code: string, newPassword: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   setUser: (u: User) => void;
 };
 
 const Ctx = createContext<AuthCtx>({} as AuthCtx);
 const USER_KEY = "chatly_user";
+const sentSessions = new Set<string>();
+
+function extractSessionId(url: string): string | null {
+  const m = url.match(/[?#&]session_id=([^&#]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const persistSession = async (t: string, u: User) => {
+    await storage.secureSet(TOKEN_KEY, t);
+    await storage.setItem(USER_KEY, u as any);
+    setToken(t);
+    setUserState(u);
+  };
+
+  const exchangeSession = useCallback(async (sessionId: string) => {
+    if (sentSessions.has(sessionId)) return;
+    sentSessions.add(sessionId);
+    const res = await api.post<{ token: string; user: User }>("/auth/session", { session_id: sessionId }, false);
+    await persistSession(res.token, res.user);
+  }, []);
+
   useEffect(() => {
     (async () => {
+      // 1) Web: process a Google session_id in the URL first
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const raw = window.location.href;
+        const sid = extractSessionId(raw);
+        if (sid) {
+          try {
+            await exchangeSession(sid);
+            try {
+              const clean = window.location.origin + window.location.pathname;
+              window.history.replaceState(window.history.state, "", clean);
+            } catch {}
+            setLoading(false);
+            return;
+          } catch { /* fall through to token check */ }
+        }
+      }
+      // 2) Mobile: cold-start deep link
+      if (Platform.OS !== "web") {
+        try {
+          const initial = await Linking.getInitialURL();
+          if (initial) {
+            const sid = extractSessionId(initial);
+            if (sid) {
+              try { await exchangeSession(sid); setLoading(false); return; } catch {}
+            }
+          }
+        } catch {}
+      }
+      // 3) Existing token
       const t = await storage.secureGet<string>(TOKEN_KEY, "");
       if (t) {
         setToken(t);
@@ -50,14 +105,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setLoading(false);
     })();
-  }, []);
+  }, [exchangeSession]);
 
-  const persistSession = async (t: string, u: User) => {
-    await storage.secureSet(TOKEN_KEY, t);
-    await storage.setItem(USER_KEY, u as any);
-    setToken(t);
-    setUserState(u);
-  };
+  const loginWithGoogle = useCallback(async () => {
+    const redirectUrl = Platform.OS === "web" && typeof window !== "undefined"
+      ? window.location.origin + "/"
+      : Linking.createURL("");
+    const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    if (Platform.OS === "web") {
+      window.location.href = authUrl;
+      return;
+    }
+    let captured: string | null = null;
+    const sub = Linking.addEventListener("url", (e) => { if (e.url) captured = e.url; });
+    try {
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+      let url: string | null = (result as any)?.url || captured;
+      if (!url) url = await Linking.getInitialURL();
+      const sid = url ? extractSessionId(url) : null;
+      if (sid) await exchangeSession(sid);
+      else throw new Error("Google sign-in was cancelled");
+    } finally {
+      sub.remove();
+    }
+  }, [exchangeSession]);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.post<{ token: string; user: User }>("/auth/login", { email, password }, false);
@@ -98,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ user, token, loading, login, signup, verifyOtp, resendOtp, forgot, reset, logout, setUser }}>
+    <Ctx.Provider value={{ user, token, loading, login, signup, verifyOtp, resendOtp, forgot, reset, loginWithGoogle, logout, setUser }}>
       {children}
     </Ctx.Provider>
   );

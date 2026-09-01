@@ -10,6 +10,10 @@ import auth
 import chat_routes
 import ai_routes
 import productivity_routes
+import social_routes
+import groups_routes
+import files_routes
+from storage_service import init_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -29,6 +33,9 @@ app.include_router(auth.router)
 app.include_router(chat_routes.router)
 app.include_router(ai_routes.router)
 app.include_router(productivity_routes.router)
+app.include_router(social_routes.router)
+app.include_router(groups_routes.router)
+app.include_router(files_routes.router)
 
 
 @app.websocket("/api/ws")
@@ -121,6 +128,11 @@ async def _seed_test_user():
 async def on_startup():
     await _seed_demo_contacts()
     await _seed_test_user()
+    try:
+        await init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.warning(f"Storage init deferred: {e}")
     logger.info("Chatly backend started")
 
 

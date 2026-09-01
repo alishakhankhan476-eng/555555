@@ -12,11 +12,19 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  const onGoogle = async () => {
+    setGoogleLoading(true); setErr("");
+    try { await loginWithGoogle(); router.replace("/(tabs)"); }
+    catch (e: any) { if (Platform.OS !== "web") setErr(e.message); }
+    finally { setGoogleLoading(false); }
+  };
 
   const onLogin = async () => {
     if (!email.trim() || !password) { setErr("Enter email and password"); return; }
@@ -57,6 +65,15 @@ export default function Login() {
           </Pressable>
 
           <Button testID="login-submit-button" title="Log In" onPress={onLogin} loading={loading} />
+
+          <View style={{ flexDirection: "row", alignItems: "center", marginVertical: spacing.lg }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+            <AppText muted size="sm" style={{ marginHorizontal: spacing.md }}>or</AppText>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+          </View>
+
+          <Button testID="google-signin-button" title="Continue with Google" variant="secondary" icon="logo-google" onPress={onGoogle} loading={googleLoading} />
+
 
           <View style={{ flexDirection: "row", justifyContent: "center", marginTop: spacing.xl }}>
             <AppText muted>Don{"'"}t have an account? </AppText>

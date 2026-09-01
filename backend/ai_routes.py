@@ -423,17 +423,24 @@ class PrivacyBody(BaseModel):
     calls: bool | None = None
     images: bool | None = None
     documents: bool | None = None
+    voice_messages: bool | None = None
+    attachments: bool | None = None
+    group_intelligence: bool | None = None
 
 
 @router.get("/privacy")
 async def get_privacy(user: dict = Depends(get_current_user)):
     p = await db.privacy.find_one({"user_id": user["user_id"]}, {"_id": 0})
     if not p:
-        p = {"user_id": user["user_id"], "messages": True, "files": True, "memory": True,
-             "contacts": True, "location": False, "calendar": True, "web_search": True,
-             "calls": False, "images": True, "documents": True}
+        p = {"user_id": user["user_id"]}
         await db.privacy.insert_one(dict(p))
         p.pop("_id", None)
+    defaults = {"messages": True, "files": True, "memory": True, "contacts": True,
+                "location": False, "calendar": True, "web_search": True, "calls": False,
+                "images": True, "documents": True, "voice_messages": True,
+                "attachments": True, "group_intelligence": True}
+    for k, v in defaults.items():
+        p.setdefault(k, v)
     return {"privacy": p}
 
 

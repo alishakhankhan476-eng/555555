@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.aimessenger.bq2ltq"
+      "bundleIdentifier": "com.emergent.aimessenger.bq2ltq",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take and send photos in your chats",
+        "NSPhotoLibraryUsageDescription": "Share photos from your library in chats",
+        "NSMicrophoneUsageDescription": "Record voice messages in your chats"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +23,8 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.aimessenger.bq2ltq"
+      "package": "com.emergent.aimessenger.bq2ltq",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +40,15 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000"
+        }
+      ],
+      "expo-audio",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Share photos from your library in chats",
+          "cameraPermission": "Take and send photos in your chats"
         }
       ]
     ],

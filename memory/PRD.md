@@ -34,6 +34,22 @@ Build "Chatly AI Messenger" — an AI-native real-time messaging + personal AI +
 ## Testing (iteration 1)
 - Backend: 30/30 pytest passing. Frontend: full login→chat→AI flows verified. Report: /app/test_reports/iteration_1.json.
 
+## Implemented — Phase 1 & 2 (2026-06 / iteration 2)
+- Google Sign-In/Sign-Up (Emergent OAuth): POST /api/auth/session upserts by email (no duplicates), issues existing JWT; frontend "Continue with Google" (web + mobile).
+- Real user-to-user: /api/users/search, contact requests (send/accept/reject, mutual auto-accept), /api/contacts/list, block. New Chat searches real users; demo<->persona seeded as contacts.
+- Photo & file sharing: Emergent Object Storage (storage_service.py), private, token-gated /api/files/{path} with participant check; upload via /api/chats/{id}/attachments.
+- Attachment Intelligence: doc text extraction (pypdf/python-docx/openpyxl/csv/txt) + image vision/OCR (gpt-4o); /api/ai/attachment actions with source citation; /api/ai/attachment-search.
+- Groups + Group Brain: /api/groups CRUD, roles, add/remove/leave; reuse chat/messages + WS; Group Brain via /api/ai/chat-brain. New Group + Group Info screens.
+- Voice messages: expo-audio record -> /api/chats/{id}/voice -> Whisper transcription; voice bubble + transcript; attachment AI applies.
+- Privacy Center: added attachments/images/documents/voice_messages/group_intelligence toggles. app.json camera/mic/photos permissions. Bundle IDs unchanged.
+
+## Testing (iteration 2)
+- Backend 35/35 after contacts-seed fix. Frontend Phase-1/2 surfaces verified. Report: /app/test_reports/iteration_2.json.
+
+## Still Pending (next)
+- 2FA/biometric lock, disappearing messages, push notifications (device build).
+- Voice->smart-reply chips, group polls/announcements/pinned UI, conversation-aware web search, automations, admin dashboard, export PPTX/PDF/XLSX, E2EE.
+
 ## Backlog (prioritized)
 - P0: Real 2-user messaging (currently single-user + AI persona demo), image/file attachments via Object Storage, push notifications.
 - P1: Groups + Group Brain, Status media, Voice (STT/TTS) + voice-to-message, document upload & PDF intelligence (RAG), automations engine, follow-up tracker.

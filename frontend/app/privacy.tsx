@@ -7,11 +7,13 @@ import { api } from "@/src/api";
 
 const PERMS: { key: string; label: string; icon: string }[] = [
   { key: "messages", label: "Read Chats", icon: "chatbubbles-outline" },
-  { key: "files", label: "Files", icon: "folder-outline" },
+  { key: "attachments", label: "Attachments", icon: "attach-outline" },
+  { key: "images", label: "Image Analysis", icon: "image-outline" },
+  { key: "documents", label: "Document Analysis", icon: "document-outline" },
+  { key: "voice_messages", label: "Voice Messages", icon: "mic-outline" },
+  { key: "group_intelligence", label: "Group Intelligence", icon: "people-outline" },
   { key: "memory", label: "Memory", icon: "bookmark-outline" },
-  { key: "contacts", label: "Contacts", icon: "people-outline" },
-  { key: "images", label: "Images", icon: "image-outline" },
-  { key: "documents", label: "Documents", icon: "document-outline" },
+  { key: "contacts", label: "Contacts", icon: "person-outline" },
   { key: "calendar", label: "Calendar", icon: "calendar-outline" },
   { key: "web_search", label: "Web Search", icon: "globe-outline" },
   { key: "location", label: "Location", icon: "location-outline" },
