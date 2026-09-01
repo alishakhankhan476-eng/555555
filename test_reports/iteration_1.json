@@ -1,0 +1,38 @@
+{
+  "summary": "Chatly AI Messenger MVP tested end-to-end. Backend: 30 pytest cases across auth, chats, security, AI (smart-reply, message-action, chat-brain, extract, chat, ask-chats, research, create), and productivity (tasks/reminders/important/insights/memory/privacy). 29/30 passed first run (96.7%); the sole failure (POST /api/ai/research returned an empty `report` string) is a flaky Sarvam AI generation issue — passed cleanly on retry. Persona bot auto-reply via Sarvam AI confirmed working (<10s). Frontend (Expo web, 390x844 viewport): login → seeded chats (Rahul/Priya/Aman) → open Rahul → send message → bot reply visible → smart-reply-button loads chip → chat-brain-button opens sheet + Summary triggers → Chatly tab hero+6 quick actions+4 insights render → Ask Chatly opens assistant → Deep Research screen submits and shows searching state → Profile shows Demo User, theme toggle (Light/Dark/System) works, and all 5 bottom tabs (Chats/Chatly/Status/Calls/Profile) navigate correctly. No red-screen errors and no deprecated Expo packages detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/research", "issue": "Intermittently returns {report: ''} when Sarvam AI generation returns empty for the long-context report prompt (max_tokens=1800). Passed on retry. Consider adding a retry-on-empty in ai_service.ai_complete or shortening the source context / max_tokens. Backend logs show Sarvam HTTP 200 but empty content."},
+      {"endpoint": "POST /api/ai/smart-reply", "issue": "Occasionally returns fewer than 3 replies (observed 1) when Sarvam JSON parse yields a shorter list — not a bug, but UI should tolerate <3."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/assistant.tsx", "issue": "Assistant send button appears rendered (arrow icon in input) but has no discoverable testID; automated flow could not trigger send-on-Enter or find [data-testid=\"send-button\"]. Add testID=\"assistant-send-button\" for reliable QA.", "testID": "assistant-send-button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_chatly_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional/robustness) In /app/backend/ai_service.py add a lightweight retry when Sarvam returns an empty string for ai_complete, especially in the /api/ai/research long-context path. Alternatively lower max_tokens or trim source content.",
+    "Add testID=\"assistant-send-button\" to the send Pressable in /app/frontend/app/assistant.tsx to allow reliable automated E2E on Ask Chatly.",
+    "Consider guarding smart-reply UI for fewer-than-3 replies (already handled visually)."
+  ],
+  "critical_code_review_comments": [
+    "server.py uses deprecated FastAPI @app.on_event('startup'/'shutdown'). Prefer lifespan context manager (non-blocking; still works).",
+    "chat_routes.py._demo_reply catches Exception broadly then defaults to 'Got it, will get back to you shortly.' — good UX fallback but consider logging the exception.",
+    "ai_routes.py.ask_chats loads up to 600 messages then scores in Python — fine at MVP scale, but add a per-user chat_id index on messages for scale.",
+    "auth.py.login returns 403 on unverified — pattern is fine; ensure frontend routes to verify screen on 403.",
+    "All routes correctly prefix /api and exclude Mongo _id — good."
+  ],
+  "updated_files": ["/app/backend/tests/__init__.py", "/app/backend/tests/test_chatly_api.py"],
+  "success_rate": {"backend": "96.7% first run, 100% on retry (30/30 tests)", "frontend": "~95% (all critical flows working; only minor testability gap on assistant send button)"},
+  "seed_data_creation": "No new seed data created; used existing demo@chatly.app account and auto-seeded Rahul/Priya/Aman persona bots. All TEST_-prefixed data (tasks/reminders/memory/messages) is transient and cleaned up by the tests themselves or is safely identifiable.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use demo@chatly.app / Demo1234 (pre-verified). Backend base URL from frontend/.env EXPO_PUBLIC_BACKEND_URL. AI endpoints are Sarvam-powered and can take 5-30s; the deep-research endpoint is occasionally flaky (empty report) — retry once before failing. Bot persona auto-reply is async ~2-10s after sending a message. All key UI elements have testID (see grep in /app/frontend/app). Assistant screen send button currently lacks a testID (only friction point found).",
+  "rca_of_issue": "Deep Research empty report RCA: Backend logs show Tavily returned 200 with 6 results and then Sarvam chat/completions returned 200 but with empty content (took ~43s). Root cause is a Sarvam AI generation edge case for long-context report prompts (~1800 max_tokens with 6 web sources of 500 chars each). Mitigation: add a one-shot retry when ai_complete returns empty, or reduce max_tokens/context size. Reproduction: POST /api/ai/research {'query':'latest news on AI in 2025'} with demo token — usually succeeds but occasionally returns report:''."
+}

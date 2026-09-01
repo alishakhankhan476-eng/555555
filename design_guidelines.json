@@ -1,0 +1,232 @@
+{
+  "app_name": "CHATLY AI MESSENGER",
+  "personality": "1 iOS-Native Clean with AI-native layout principles",
+  "personality_one_liner": "A premium, lightning-fast communication operating system where a highly capable AI assistant is seamlessly woven into your daily messaging and productivity workflows.",
+  "color": {
+    "surface": "#F5F6F8",
+    "onSurface": "#1C1C1E",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1C1E",
+    "surfaceTertiary": "#EAECEF",
+    "onSurfaceTertiary": "#1C1C1E",
+    "surfaceInverse": "#1C1C1E",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#FF6600",
+    "brandPrimary": "#FF5E00",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#FF8C42",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#FFF0E6",
+    "onBrandTertiary": "#FF5E00",
+    "success": "#34C759",
+    "onSuccess": "#FFFFFF",
+    "warning": "#FF9F0A",
+    "onWarning": "#FFFFFF",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#5C5C60",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E5EA",
+    "borderStrong": "#D1D1D6",
+    "divider": "#E5E5EA"
+  },
+  "color_dark": {
+    "surface": "#121214",
+    "onSurface": "#F5F6F8",
+    "surfaceSecondary": "#1C1C1E",
+    "onSurfaceSecondary": "#FFFFFF",
+    "surfaceTertiary": "#2C2C2E",
+    "onSurfaceTertiary": "#FFFFFF",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#1C1C1E",
+    "brand": "#FF6600",
+    "brandPrimary": "#FF5E00",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#FF8C42",
+    "onBrandSecondary": "#1C1C1E",
+    "brandTertiary": "#3A1E0D",
+    "onBrandTertiary": "#FF8C42",
+    "success": "#32D74B",
+    "onSuccess": "#000000",
+    "warning": "#FFD60A",
+    "onWarning": "#000000",
+    "error": "#FF453A",
+    "onError": "#FFFFFF",
+    "info": "#8E8E93",
+    "onInfo": "#000000",
+    "border": "#2C2C2E",
+    "borderStrong": "#3A3A3C",
+    "divider": "#2C2C2E"
+  },
+  "typography": {
+    "displayFontFamily": "Geist",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Avoid nested scroll views; screen owns the scroll. Minimum 44x44 touch targets.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "pill": 9999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do_s": [
+      "Bottom tab bar background",
+      "Sticky headers above scrollable chat logs or lists",
+      "Action sheet (Ask Chatly) backgrounds",
+      "Floating suggestion chips inside chat composer (subtle blur over content)"
+    ],
+    "dont_s": [
+      "Message bubbles",
+      "Standard list rows",
+      "Body content areas",
+      "Inputs"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Chats List",
+      "purpose": "Primary landing showing all ongoing 1-to-1, group, and AI threads.",
+      "states": {
+        "loading": "Skeleton rows resembling avatars and message snippets.",
+        "empty": "Subtle abstract illustration (workspace_bg) + 'No messages yet' + 'Start a Conversation' CTA.",
+        "error": "Message 'Unable to load chats' + Retry button."
+      },
+      "layout": "Sticky large header with glassmorphism. Vertical scroll list. Each row has 56pt minimum height, avatar, title, subtitle (last message), and timestamp. AI threads highlighted with a subtle brandTertiary background or indicator to distinguish from human chats."
+    },
+    {
+      "name": "1-to-1 Chat Screen",
+      "purpose": "Real-time messaging with integrated AI capabilities.",
+      "states": {
+        "loading": "Spinner centered.",
+        "empty": "No messages state with 'Say Hello' prompt.",
+        "error": "Error banner at top."
+      },
+      "layout": "Inverted flat list for messages. User bubbles in brandPrimary, received in surfaceSecondary. KeyboardAvoidingView wrapping a text input with integrated Smart Reply suggestion chips (pill radius) floating just above the input. Long-pressing a message invokes the 'Ask Chatly' bottom sheet."
+    },
+    {
+      "name": "Ask Chatly Action Sheet",
+      "purpose": "Contextual AI actions on a specific message or chat.",
+      "states": {
+        "loading": "Processing state with inline animated progress.",
+        "empty": "N/A",
+        "error": "Failed to process message."
+      },
+      "layout": "Bottom sheet modal using @gorhom/bottom-sheet. List of actions (Summarize, Translate, Create Task, Rewrite) as rows with left-aligned icons. If an action is taken (e.g. Summarize), the sheet morphs to show the result inline."
+    },
+    {
+      "name": "Chatly Dashboard",
+      "purpose": "The AI command center and productivity hub.",
+      "states": {
+        "loading": "Ghosted layout of the hero and grid.",
+        "empty": "N/A - AI is always ready.",
+        "error": "Could not connect to Chatly AI + Retry."
+      },
+      "layout": "Hero banner at top using ai_dashboard_hero background (with gradient scrim) greeting the user and summarizing pending tasks. Below hero: 2-column grid of 'Quick Actions' (Ask Your Chats, Deep Research, Create Doc) using surfaceSecondary cards. Below grid: Vertical list of 'AI Insights' (Important Messages, Reminders) formatted as structured cards with clear calls to action."
+    },
+    {
+      "name": "Deep Research",
+      "purpose": "Conduct web research and generate structured reports.",
+      "states": {
+        "loading": "Sequential text updates ('Searching web...', 'Reading sources...', 'Synthesizing...').",
+        "empty": "Search input centered on screen with suggested research queries.",
+        "error": "Search failed + Retry."
+      },
+      "layout": "Chat-like interface but the output is a single continuous document on surfaceSecondary. Inline citation chips (pill radius, surfaceTertiary background). A sticky 'Export / Save to Studio' primary FAB at bottom."
+    },
+    {
+      "name": "Profile & Settings",
+      "purpose": "Manage identity and fine-grained AI Privacy Controls.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "N/A",
+        "error": "Failed to load profile."
+      },
+      "layout": "Large avatar header. Single-column list of settings sections. Dedicated 'AI Privacy Control Center' card emphasizing what data Chatly can access (toggles for 'Read Chats', 'Access Contacts', etc.) to build trust. Uses clear toggle switches and 0.5pt border dividers."
+    },
+    {
+      "name": "Auth Flow (Sign Up, Login, OTP)",
+      "purpose": "Secure authentication into the messenger.",
+      "states": {
+        "loading": "Button shows loading spinner.",
+        "empty": "N/A",
+        "error": "Inline red validation text below inputs."
+      },
+      "layout": "Clean, spacious forms. Labels above inputs. Large, full-width primary CTA at bottom. For OTP, a 6-digit spaced input row. Uses surface background, inputs are surfaceTertiary with borderStrong on focus."
+    }
+  ],
+  "images": {
+    "chat_avatar_1": {
+      "url": "https://images.unsplash.com/photo-1543132220-3ec99c6094dc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwzfHxwb3J0cmFpdCUyMHBob3RvZ3JhcGh5JTIwb2YlMjBwcm9mZXNzaW9uYWwlMjBwZW9wbGV8ZW58MHx8fHwxNzg4MjM2ODYyfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Professional man avatar"
+    },
+    "chat_avatar_2": {
+      "url": "https://images.unsplash.com/photo-1506863530036-1efeddceb993?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHw0fHxwb3J0cmFpdCUyMHBob3RvZ3JhcGh5JTIwb2YlMjBwcm9mZXNzaW9uYWwlMjBwZW9wbGV8ZW58MHx8fHwxNzg4MjM2ODYyfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Professional woman avatar"
+    },
+    "chat_avatar_3": {
+      "url": "https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwyfHxwb3J0cmFpdCUyMHBob3RvZ3JhcGh5JTIwb2YlMjBwcm9mZXNzaW9uYWwlMjBwZW9wbGV8ZW58MHx8fHwxNzg4MjM2ODYyfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Professional woman avatar alternate"
+    },
+    "ai_dashboard_hero": {
+      "url": "https://images.unsplash.com/photo-1590959651373-a3db0f38a961?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwM2QlMjBhYnN0cmFjdCUyMGdsb3dpbmclMjBvcmFuZ2UlMjBvcmIlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODgyMzY4NjJ8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1622737133809-d95047b9e673?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwM2QlMjBhYnN0cmFjdCUyMGdsb3dpbmclMjBvcmFuZ2UlMjBvcmIlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODgyMzY4NjJ8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract glowing orange 3D orb representing the Chatly AI"
+    },
+    "workspace_bg": {
+      "url": "https://images.unsplash.com/photo-1674503431654-885753f78ee4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMG1vZGVybiUyMGNvenklMjB3b3Jrc3BhY2UlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4ODIzNjg2Mnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean modern desk and workspace"
+    }
+  },
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "tab_change": "selection",
+    "message_sent": "impactMedium",
+    "ai_action_trigger": "impactHeavy",
+    "toggle_switch": "selection"
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: Adhere strictly to the color palette. Primary accent must be #FF5E00 (bright orange) against #F5F6F8 (soft gray) in light mode, and #121214 in dark mode. NO blues or purples are permitted anywhere in the UI.",
+    "Typography must be 'Geist'. Maintain fractional spacing mimicking Apple iOS norms (e.g. tracking +0.013em for body). Use 1px borders for card elevation instead of heavy drop shadows.",
+    "Ensure safe area insets are respected so no content gets trapped under system navigation or the dynamic island. Use `SafeAreaView` or `useSafeAreaInsets` heavily on screen roots.",
+    "For the 'Chatly Dashboard', overlay a vertical gradient scrim (transparent to surfaceInverse) over the 'ai_dashboard_hero' image to ensure any text on it maintains WCAG AAA readability.",
+    "Implement the 'Ask Chatly' functionality as a highly responsive bottom sheet (`@gorhom/bottom-sheet`) over the chat view. Maintain a minimum tap target of 44x44 on all list items and quick actions.",
+    "Interactive UI pills (smart replies, AI suggestion chips, tags) must utilize the 'pill' (9999px) radius token.",
+    "Do NOT use emojis anywhere in the system UI or empty states. Rely on Phosphor icons and the provided abstract imagery.",
+    "Provide empty, loading, and error states natively on every data-fetching view. Loading states should utilize subtle skeleton screens where applicable."
+  ]
+}
