@@ -3,7 +3,7 @@
 import requests
 import json
 
-BASE_URL = "https://e0cff6da-eabf-4eff-9687-61106030666f.preview.emergentagent.com/api"
+BASE_URL = "https://app-preview-launch-4.preview.emergentagent.com/api"
 TEST_EMAIL = "demo@chatly.app"
 TEST_PASSWORD = "Demo1234"
 
