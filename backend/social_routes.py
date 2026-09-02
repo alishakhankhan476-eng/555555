@@ -1,4 +1,5 @@
 import uuid
+import secrets
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
@@ -143,3 +144,65 @@ async def block_user(body: BlockBody, user: dict = Depends(get_current_user)):
         return {"blocked": False}
     await db.users.update_one({"user_id": user["user_id"]}, {"$addToSet": {"blocked": body.user_id}})
     return {"blocked": True}
+
+
+# ---------------- Unique QR code + public profiles + relationship ----------------
+
+async def ensure_qr_token(u: dict) -> str:
+    """Every user gets one permanent, globally-unique QR token. Generated lazily
+    and stored on the user document so it never changes for that account."""
+    token = u.get("qr_token")
+    if token:
+        return token
+    for _ in range(6):
+        token = "CHATLY-" + secrets.token_urlsafe(9)
+        if not await db.users.find_one({"qr_token": token}):
+            break
+    await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"qr_token": token}})
+    return token
+
+
+async def _relationship(viewer_id: str, target: dict) -> dict:
+    tid = target["user_id"]
+    if tid == viewer_id:
+        return {"status": "self"}
+    if await db.contacts.find_one({"user_id": viewer_id, "contact_id": tid}):
+        return {"status": "friends"}
+    if await db.contact_requests.find_one({"from_id": viewer_id, "to_id": tid, "status": "pending"}):
+        return {"status": "request_sent"}
+    incoming = await db.contact_requests.find_one({"from_id": tid, "to_id": viewer_id, "status": "pending"})
+    if incoming:
+        return {"status": "request_incoming", "request_id": incoming["id"]}
+    return {"status": "none"}
+
+
+async def _profile_payload(target: dict, viewer: dict) -> dict:
+    item = _pub(target, viewer["user_id"])
+    item["relationship"] = await _relationship(viewer["user_id"], target)
+    item["blocked_by_me"] = target["user_id"] in viewer.get("blocked", [])
+    return item
+
+
+@router.get("/me/qr")
+async def my_qr(user: dict = Depends(get_current_user)):
+    token = await ensure_qr_token(user)
+    return {"qr_token": token, "payload": f"chatly://user/{token}", "user": _pub(user, user["user_id"])}
+
+
+@router.get("/users/by-qr/{code}")
+async def user_by_qr(code: str, user: dict = Depends(get_current_user)):
+    code = (code or "").strip()
+    if "chatly://user/" in code:
+        code = code.split("chatly://user/")[-1].strip()
+    target = await db.users.find_one({"qr_token": code, "deleted_at": None}, {"_id": 0, "password": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="This QR code is not valid.")
+    return {"user": await _profile_payload(target, user)}
+
+
+@router.get("/users/{user_id}")
+async def get_user_profile(user_id: str, user: dict = Depends(get_current_user)):
+    target = await db.users.find_one({"user_id": user_id, "deleted_at": None}, {"_id": 0, "password": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"user": await _profile_payload(target, user)}

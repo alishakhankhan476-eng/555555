@@ -16,6 +16,7 @@ import { useAuth } from "@/src/auth";
 import { useWs } from "@/src/ws";
 import { useCall } from "@/src/calls";
 import { fileUrl, pickImageFromLibrary, captureImage, pickDocument, uploadImage, uploadDocument, uploadVoice } from "@/src/upload";
+import { CHAT_THEME_PRESETS, ACCENTS, resolveChatTheme, type ChatTheme } from "@/src/chatThemes";
 import dayjs from "dayjs";
 
 type Msg = {
@@ -81,7 +82,54 @@ export default function ChatScreen() {
   const [aiResult, setAiResult] = useState<{ title: string; body: string; canReply?: boolean } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
+  const [otherId, setOtherId] = useState<string | null>(null);
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [blockedMe, setBlockedMe] = useState(false);
+  const [chatTheme, setChatTheme] = useState<ChatTheme | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const ct = resolveChatTheme(chatTheme, colors);
+
   const typingTimer = useRef<any>(null);
+
+  const loadMeta = useCallback(async () => {
+    try {
+      const c = await api.get<any>(`/chats/${id}`);
+      if (!isGroup && c.other?.user_id) setOtherId(c.other.user_id);
+      setBlockedByMe(!!c.blocked_by_me);
+      setBlockedMe(!!c.blocked_me);
+      setChatTheme(c.theme || null);
+    } catch {}
+  }, [id, isGroup]);
+  useEffect(() => { loadMeta(); }, [loadMeta]);
+
+  const openProfile = () => {
+    if (isGroup) { router.push({ pathname: "/group/[id]", params: { id: String(id), name: String(name) } }); return; }
+    if (otherId) router.push({ pathname: "/user/[id]", params: { id: otherId } });
+  };
+
+  const applyTheme = async (theme: ChatTheme | null) => {
+    setChatTheme(theme);
+    try { await api.post(`/chats/${id}/theme`, { theme }); }
+    catch { toast.show("Couldn't save theme", "error"); }
+  };
+
+  const toggleBlock = async () => {
+    if (!otherId) return;
+    setMenuOpen(false);
+    try {
+      const res = await api.post<{ blocked: boolean }>("/contacts/block", { user_id: otherId });
+      setBlockedByMe(res.blocked);
+      toast.show(res.blocked ? "User blocked" : "User unblocked", "success");
+    } catch { toast.show("Failed", "error"); }
+  };
+
+  const deleteChat = async () => {
+    setConfirmDelete(false); setMenuOpen(false);
+    try { await api.del(`/chats/${id}`); router.replace("/(tabs)"); }
+    catch { toast.show("Failed to delete chat", "error"); }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -291,8 +339,8 @@ export default function ChatScreen() {
         style={{ alignItems: mine ? "flex-end" : "flex-start", marginVertical: 3, paddingHorizontal: spacing.md }}
       >
         <View style={[styles.bubble, {
-          backgroundColor: mine ? colors.bubbleOut : colors.bubbleIn,
-          borderColor: colors.border, borderWidth: mine ? 0 : 1,
+          backgroundColor: mine ? ct.bubbleOut : ct.bubbleIn,
+          borderColor: ct.custom ? "transparent" : colors.border, borderWidth: mine ? 0 : (ct.custom ? 0 : 1),
           borderBottomRightRadius: mine ? 4 : radius.lg, borderBottomLeftRadius: mine ? radius.lg : 4,
         }]}>
           {isGroup && !mine && (
@@ -327,7 +375,7 @@ export default function ChatScreen() {
             </View>
           )}
           {!!item.text && (
-            <AppText size="md" color={mine ? colors.onBubbleOut : colors.onCard} style={{ fontStyle: item.deleted ? "italic" : "normal", opacity: item.deleted ? 0.7 : 1 }}>
+            <AppText size="md" color={mine ? ct.onBubbleOut : ct.onBubbleIn} style={{ fontStyle: item.deleted ? "italic" : "normal", opacity: item.deleted ? 0.7 : 1 }}>
               {item.text}
             </AppText>
           )}
@@ -353,25 +401,30 @@ export default function ChatScreen() {
         <Pressable testID="chat-back" onPress={() => router.back()} hitSlop={10} style={{ marginRight: 6 }}>
           <Icon name="chevron-back" size={28} />
         </Pressable>
-        <Pressable onPress={() => isGroup && router.push({ pathname: "/group/[id]", params: { id: String(id), name: String(name) } })} style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
-          <Avatar name={String(name)} size={40} online={!isGroup} />
+        <Pressable testID="chat-header-profile" onPress={openProfile} style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+          <Avatar name={String(name)} size={40} online={!isGroup && !blockedMe} />
           <View style={{ flex: 1, marginLeft: spacing.sm }}>
             <AppText weight="bold" size="lg" numberOfLines={1}>{name}</AppText>
-            <AppText size="sm" color={otherTyping ? colors.brandPrimary : colors.onSurfaceMuted}>{isGroup ? "Tap for group info" : otherTyping ? "typing…" : "online"}</AppText>
+            <AppText size="sm" color={otherTyping ? colors.brandPrimary : colors.onSurfaceMuted}>{isGroup ? "Tap for group info" : blockedByMe ? "Blocked" : otherTyping ? "typing…" : "tap for profile"}</AppText>
           </View>
         </Pressable>
-        <Pressable testID="voice-call-button" onPress={() => startCall(String(id), String(name), "voice")} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: 2 }}>
+        <Pressable testID="voice-call-button" onPress={() => startCall(String(id), String(name), "voice")} style={{ width: 38, height: 40, alignItems: "center", justifyContent: "center" }}>
           <Icon name="call" size={22} color={colors.brandPrimary} />
         </Pressable>
-        <Pressable testID="video-call-button" onPress={() => startCall(String(id), String(name), "video")} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: 2 }}>
+        <Pressable testID="video-call-button" onPress={() => startCall(String(id), String(name), "video")} style={{ width: 38, height: 40, alignItems: "center", justifyContent: "center" }}>
           <Icon name="videocam" size={22} color={colors.brandPrimary} />
         </Pressable>
-        <Pressable testID="chat-brain-button" onPress={() => { setBrainOpen(true); setAiResult(null); }} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
-          <Icon name="sparkles" size={20} color={colors.brandPrimary} />
+        <Pressable testID="chat-brain-button" onPress={() => { setBrainOpen(true); setAiResult(null); }} style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
+          <Icon name="sparkles" size={19} color={colors.brandPrimary} />
         </Pressable>
+        {!isGroup && (
+          <Pressable testID="chat-menu-button" onPress={() => setMenuOpen(true)} style={{ width: 36, height: 40, alignItems: "center", justifyContent: "center", marginLeft: 2 }}>
+            <Icon name="ellipsis-vertical" size={20} />
+          </Pressable>
+        )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: ct.bg }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
         {loading ? <Loading /> : (
           <FlatList
             data={messages}
@@ -393,7 +446,17 @@ export default function ChatScreen() {
           </ScrollView>
         )}
 
-        {/* Composer */}
+        {/* Composer / blocked banner */}
+        {(blockedByMe || blockedMe) ? (
+          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.md, paddingTop: spacing.md, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border, alignItems: "center" }}>
+            <AppText muted center>{blockedByMe ? "You blocked this contact. Unblock to send messages." : "You can't reply to this conversation."}</AppText>
+            {blockedByMe && (
+              <Pressable testID="unblock-inline" onPress={toggleBlock} style={{ marginTop: spacing.sm }}>
+                <AppText weight="bold" color={colors.brandPrimary}>Unblock</AppText>
+              </Pressable>
+            )}
+          </View>
+        ) : (
         <View style={{ flexDirection: "row", alignItems: "flex-end", paddingHorizontal: spacing.md, paddingBottom: insets.bottom + spacing.sm, paddingTop: spacing.sm, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border }}>
           <Pressable testID="attach-button" onPress={() => setAttachOpen(true)} style={{ width: 40, height: 42, alignItems: "center", justifyContent: "center" }}>
             {uploading ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : <Icon name="add-circle-outline" size={26} color={colors.brandPrimary} />}
@@ -414,7 +477,7 @@ export default function ChatScreen() {
             />
           </View>
           {text.trim() ? (
-            <Pressable testID="send-button" onPress={onSend} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", marginLeft: 6 }}>
+            <Pressable testID="send-button" onPress={onSend} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: ct.accent, alignItems: "center", justifyContent: "center", marginLeft: 6 }}>
               <Icon name="arrow-up" size={22} color="#fff" />
             </Pressable>
           ) : (
@@ -422,12 +485,13 @@ export default function ChatScreen() {
               testID="voice-button"
               onPressIn={startRecording}
               onPressOut={() => stopRecording(false)}
-              style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: recState.isRecording ? colors.error : colors.brandPrimary, alignItems: "center", justifyContent: "center", marginLeft: 6 }}
+              style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: recState.isRecording ? colors.error : ct.accent, alignItems: "center", justifyContent: "center", marginLeft: 6 }}
             >
               <Icon name={recState.isRecording ? "stop" : "mic"} size={22} color="#fff" />
             </Pressable>
           )}
         </View>
+        )}
       </KeyboardAvoidingView>
 
       {/* Message action sheet */}
@@ -544,6 +608,69 @@ export default function ChatScreen() {
           )}
         </View>
       </Modal>
+
+      {/* 3-dot menu */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuOpen(false)}>
+          <View style={{ position: "absolute", top: insets.top + 52, right: spacing.md, backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, minWidth: 210, paddingVertical: spacing.xs, ...Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 8 } }) }}>
+            <Pressable testID="menu-theme" onPress={() => { setMenuOpen(false); setThemeOpen(true); }} style={styles.menuRow}>
+              <Icon name="color-palette-outline" size={20} color={colors.brandPrimary} />
+              <AppText style={{ marginLeft: 12 }} weight="medium">Chat Theme</AppText>
+            </Pressable>
+            <Pressable testID="menu-block" onPress={toggleBlock} style={styles.menuRow}>
+              <Icon name={blockedByMe ? "lock-open-outline" : "ban-outline"} size={20} color={colors.error} />
+              <AppText style={{ marginLeft: 12 }} weight="medium" color={colors.error}>{blockedByMe ? "Unblock User" : "Block User"}</AppText>
+            </Pressable>
+            <Pressable testID="menu-delete" onPress={() => { setMenuOpen(false); setConfirmDelete(true); }} style={styles.menuRow}>
+              <Icon name="trash-outline" size={20} color={colors.error} />
+              <AppText style={{ marginLeft: 12 }} weight="medium" color={colors.error}>Delete Chat</AppText>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Chat theme customizer */}
+      <Modal visible={themeOpen} transparent animationType="slide" onRequestClose={() => setThemeOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: colors.overlay }} onPress={() => setThemeOpen(false)} />
+        <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + spacing.lg }]}>
+          <AppText weight="bold" size="lg" style={{ marginBottom: spacing.md }}>Chat Theme</AppText>
+          <AppText muted size="sm" weight="bold" style={{ marginBottom: spacing.sm }}>BACKGROUND</AppText>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {CHAT_THEME_PRESETS.map((p) => {
+              const active = (chatTheme?.preset || "default") === p.preset;
+              return (
+                <Pressable key={p.preset} testID={`theme-${p.preset}`} onPress={() => applyTheme(p.preset === "default" ? (chatTheme?.accent ? { preset: "default", accent: chatTheme.accent } : null) : { ...p, accent: chatTheme?.accent || p.accent })} style={{ alignItems: "center", width: 72 }}>
+                  <View style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: p.bg || colors.surface, borderWidth: active ? 3 : 1, borderColor: active ? colors.brandPrimary : colors.border, alignItems: "center", justifyContent: "center" }}>
+                    {p.bubbleOut ? <View style={{ width: 26, height: 14, borderRadius: 7, backgroundColor: p.bubbleOut }} /> : <Icon name="contrast-outline" size={18} color={colors.onSurfaceMuted} />}
+                  </View>
+                  <AppText size="xs" style={{ marginTop: 4 }}>{p.label}</AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <AppText muted size="sm" weight="bold" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>ACCENT COLOR</AppText>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {ACCENTS.map((a) => (
+              <Pressable key={a} testID={`accent-${a}`} onPress={() => applyTheme({ ...(chatTheme || {}), preset: chatTheme?.preset || "default", accent: a })} style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: a, borderWidth: ct.accent === a ? 3 : 1, borderColor: ct.accent === a ? colors.onSurface : colors.border }} />
+            ))}
+          </View>
+          <Pressable testID="reset-theme" onPress={() => applyTheme(null)} style={{ marginTop: spacing.lg, alignSelf: "center" }}>
+            <AppText weight="bold" color={colors.brandPrimary}>Reset to Default</AppText>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* Delete chat confirm */}
+      <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.overlay, alignItems: "center", justifyContent: "center", padding: spacing.xl }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.xl, width: "100%" }}>
+            <AppText weight="bold" size="lg" center>Delete this chat?</AppText>
+            <AppText muted center style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}>The conversation is removed from your chats. It reappears if you receive a new message.</AppText>
+            <Pressable testID="confirm-delete-chat" onPress={deleteChat} style={{ height: 48, borderRadius: radius.md, backgroundColor: colors.error, alignItems: "center", justifyContent: "center" }}><AppText weight="bold" color="#fff">Delete Chat</AppText></Pressable>
+            <Pressable onPress={() => setConfirmDelete(false)} style={{ marginTop: spacing.md, alignItems: "center" }}><AppText weight="semibold">Cancel</AppText></Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -554,4 +681,5 @@ const styles = StyleSheet.create({
   srChip: { paddingHorizontal: spacing.md, height: 40, borderRadius: radius.pill, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   sheet: { position: "absolute", bottom: 0, left: 0, right: 0, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg },
   actionRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md },
+  menuRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
 });

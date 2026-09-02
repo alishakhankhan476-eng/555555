@@ -16,6 +16,7 @@ import social_routes
 import groups_routes
 import files_routes
 import calls_routes
+import status_routes
 from storage_service import init_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -56,6 +57,7 @@ app.include_router(social_routes.router)
 app.include_router(groups_routes.router)
 app.include_router(files_routes.router)
 app.include_router(calls_routes.router)
+app.include_router(status_routes.router)
 
 
 @app.websocket("/api/ws")
@@ -132,29 +134,42 @@ async def _seed_demo_contacts():
 async def _seed_test_user():
     """A pre-verified account for QA / demo so the full app can be exercised
     without email OTP. Real users sign up with their real email (OTP works)."""
-    email = "demo@chatly.app"
-    existing = await db.users.find_one({"email": email})
-    if existing:
-        return
-    uid = "user_demo_chatly"
-    await db.users.insert_one({
-        "user_id": uid, "name": "Demo User", "email": email,
-        "username": "demouser", "bio": "Exploring Chatly AI", "avatar": None,
-        "password": hash_password("Demo1234"), "email_verified": True,
-        "online": False, "last_seen": datetime.now(timezone.utc).isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(), "deleted_at": None,
-    })
-    await db.privacy.update_one({"user_id": uid}, {"$setOnInsert": {
-        "user_id": uid, "messages": True, "files": True, "memory": True, "contacts": True,
-        "location": False, "calendar": True, "web_search": True, "calls": False,
-        "images": True, "documents": True}}, upsert=True)
-    logger.info("Seeded demo login user demo@chatly.app")
+    accounts = [
+        {"email": "demo@chatly.app", "uid": "user_demo_chatly", "name": "Demo User", "username": "demouser"},
+        {"email": "demo2@chatly.app", "uid": "user_demo2_chatly", "name": "Aria Nair", "username": "arianair"},
+    ]
+    for a in accounts:
+        existing = await db.users.find_one({"email": a["email"]})
+        if existing:
+            continue
+        await db.users.insert_one({
+            "user_id": a["uid"], "name": a["name"], "email": a["email"],
+            "username": a["username"], "bio": "Exploring Chatly AI", "avatar": None,
+            "password": hash_password("Demo1234"), "email_verified": True,
+            "online": False, "last_seen": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(), "deleted_at": None,
+        })
+        await db.privacy.update_one({"user_id": a["uid"]}, {"$setOnInsert": {
+            "user_id": a["uid"], "messages": True, "files": True, "memory": True, "contacts": True,
+            "location": False, "calendar": True, "web_search": True, "calls": False,
+            "images": True, "documents": True}}, upsert=True)
+        logger.info(f"Seeded demo login user {a['email']}")
+
+
+async def _backfill_qr_tokens():
+    """Ensure every existing user has a permanent unique QR token."""
+    import secrets
+    cursor = db.users.find({"$or": [{"qr_token": {"$exists": False}}, {"qr_token": None}]}, {"_id": 0, "user_id": 1})
+    async for u in cursor:
+        token = "CHATLY-" + secrets.token_urlsafe(9)
+        await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"qr_token": token}})
 
 
 @app.on_event("startup")
 async def on_startup():
     await _seed_demo_contacts()
     await _seed_test_user()
+    await _backfill_qr_tokens()
     try:
         await init_storage()
         logger.info("Object storage initialized")

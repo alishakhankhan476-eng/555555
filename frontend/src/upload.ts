@@ -72,3 +72,43 @@ export async function uploadVoice(chatId: string, uri: string, duration: number)
   form.append("language", "en");
   return postForm(`/chats/${chatId}/voice`, form);
 }
+
+// ---------------- Profile photo + Status media ----------------
+export function statusMediaUrl(storagePath: string, token: string) {
+  return `${BASE}/status/media/${storagePath}?token=${encodeURIComponent(token)}`;
+}
+
+/** Pick a square profile photo and return a base64 data URI (or null if cancelled). */
+export async function pickAvatar(): Promise<string | null> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new Error("permission-denied");
+  const r = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true,
+  });
+  if (r.canceled || !r.assets?.[0]?.base64) return null;
+  const a = r.assets[0];
+  return `data:${a.mimeType || "image/jpeg"};base64,${a.base64}`;
+}
+
+/** Pick an image for a status and return a base64 data URI (or null). */
+export async function pickStatusImage(): Promise<string | null> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new Error("permission-denied");
+  const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.6, base64: true });
+  if (r.canceled || !r.assets?.[0]?.base64) return null;
+  const a = r.assets[0];
+  return `data:${a.mimeType || "image/jpeg"};base64,${a.base64}`;
+}
+
+export async function pickStatusVideo() {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new Error("permission-denied");
+  return ImagePicker.launchImageLibraryAsync({ mediaTypes: ["videos"], quality: 0.5, videoMaxDuration: 30 });
+}
+
+export async function uploadStatusVideo(asset: any) {
+  const form = new FormData();
+  await buildFormPart(form, "file", asset.uri, asset.fileName || `status_${Date.now()}.mp4`, asset.mimeType || "video/mp4");
+  form.append("caption", "");
+  return postForm(`/status/video`, form);
+}

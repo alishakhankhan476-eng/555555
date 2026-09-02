@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { View, ScrollView, Pressable, Modal, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing, radius } from "@/src/theme";
 import { AppText, Avatar, Icon, Card, SettingRow, Input, Button, useToast } from "@/src/ui";
 import { useAuth } from "@/src/auth";
 import { api } from "@/src/api";
+import { pickAvatar } from "@/src/upload";
 
 export default function Profile() {
   const { colors, mode, setMode } = useTheme();
@@ -18,6 +20,39 @@ export default function Profile() {
   const [bio, setBio] = useState(user?.bio || "");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [photoMenu, setPhotoMenu] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [reqCount, setReqCount] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    api.get("/contacts/requests").then((r) => setReqCount(r.requests?.length || 0)).catch(() => {});
+  }, []));
+
+  const changePhoto = async () => {
+    setPhotoMenu(false);
+    try {
+      const dataUri = await pickAvatar();
+      if (!dataUri) return;
+      setPhotoBusy(true);
+      const res = await api.put<{ user: any }>("/auth/me", { avatar: dataUri });
+      setUser(res.user);
+      toast.show("Photo updated", "success");
+    } catch (e: any) {
+      if (String(e.message).includes("permission")) toast.show("Photo permission needed", "error");
+      else toast.show("Failed to update photo", "error");
+    } finally { setPhotoBusy(false); }
+  };
+
+  const removePhoto = async () => {
+    setPhotoMenu(false);
+    setPhotoBusy(true);
+    try {
+      const res = await api.put<{ user: any }>("/auth/me", { avatar: "" });
+      setUser(res.user);
+      toast.show("Photo removed", "success");
+    } catch { toast.show("Failed", "error"); }
+    finally { setPhotoBusy(false); }
+  };
 
   const saveProfile = async () => {
     setSaving(true);
@@ -41,7 +76,12 @@ export default function Profile() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
         <View style={{ alignItems: "center", paddingTop: insets.top + spacing.lg, paddingBottom: spacing.lg }}>
-          <Avatar name={user?.name} uri={user?.avatar} size={96} />
+          <Pressable testID="change-avatar" onPress={() => setPhotoMenu(true)}>
+            <Avatar name={user?.name} uri={user?.avatar} size={96} />
+            <View style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.surface }}>
+              <Icon name="camera" size={15} color="#fff" />
+            </View>
+          </Pressable>
           <AppText size="xxl" weight="heavy" style={{ marginTop: spacing.md }}>{user?.name}</AppText>
           <AppText muted>@{user?.username}</AppText>
           {user?.bio ? <AppText center style={{ marginTop: 6, maxWidth: 280 }}>{user.bio}</AppText> : null}
@@ -52,6 +92,17 @@ export default function Profile() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.lg, gap: spacing.lg }}>
+          <Card style={{ paddingVertical: spacing.xs }}>
+            <SettingRow testID="row-my-qr" icon="qr-code-outline" label="My QR Code" onPress={() => router.push("/qr")} />
+            <SettingRow testID="row-scan-qr" icon="scan-outline" label="Scan QR Code" onPress={() => router.push("/scan")} />
+            <SettingRow testID="row-requests" icon="person-add-outline" label="Friend Requests" onPress={() => router.push("/requests")}
+              right={reqCount > 0 ? (
+                <View style={{ backgroundColor: colors.brandPrimary, borderRadius: 11, minWidth: 22, height: 22, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 }}>
+                  <AppText size="xs" weight="bold" color="#fff">{reqCount}</AppText>
+                </View>
+              ) : undefined} />
+          </Card>
+
           <Card style={{ paddingVertical: spacing.xs }}>
             <SettingRow testID="row-ai-memory" icon="bookmark-outline" label="AI Memory" onPress={() => router.push("/memory")} />
             <SettingRow testID="row-creations" icon="color-wand-outline" label="AI Creations" onPress={() => router.push("/creations")} />
@@ -91,6 +142,24 @@ export default function Profile() {
           <Input testID="edit-name" label="Name" value={name} onChangeText={setName} autoCapitalize="words" />
           <Input testID="edit-bio" label="Bio" value={bio} onChangeText={setBio} placeholder="A short bio" multiline />
           <Button testID="save-profile" title="Save" onPress={saveProfile} loading={saving} />
+        </View>
+      </Modal>
+
+      {/* Photo action sheet */}
+      <Modal visible={photoMenu} transparent animationType="slide" onRequestClose={() => setPhotoMenu(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: colors.overlay }} onPress={() => setPhotoMenu(false)} />
+        <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + spacing.lg }]}>
+          <AppText weight="bold" size="lg" style={{ marginBottom: spacing.md }}>Profile Photo</AppText>
+          <Pressable testID="choose-photo" onPress={changePhoto} style={{ flexDirection: "row", alignItems: "center", paddingVertical: spacing.md }}>
+            <Icon name="image-outline" size={22} color={colors.brandPrimary} />
+            <AppText weight="medium" style={{ marginLeft: spacing.md }}>Choose Photo</AppText>
+          </Pressable>
+          {user?.avatar ? (
+            <Pressable testID="remove-photo" onPress={removePhoto} style={{ flexDirection: "row", alignItems: "center", paddingVertical: spacing.md }}>
+              <Icon name="trash-outline" size={22} color={colors.error} />
+              <AppText weight="medium" color={colors.error} style={{ marginLeft: spacing.md }}>Remove Photo</AppText>
+            </Pressable>
+          ) : null}
         </View>
       </Modal>
 

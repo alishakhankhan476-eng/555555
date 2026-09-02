@@ -169,14 +169,112 @@ backend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 6
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "QR: unique per-user token, my QR, resolve by-qr"
+    - "Public profile + relationship status"
+    - "Status feature: create/feed/view/delete + 24h expiry"
+    - "Chat theme per-user-per-chat persistence"
+    - "Delete chat (per-user hide) + reappears on new message"
+    - "Block enforcement on send + block flags in chat view"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+new_backend_features:
+  - task: "QR code: GET /api/me/qr, GET /api/users/by-qr/{code} (unique, permanent)"
+    implemented: true
+    working: true
+    file: "backend/social_routes.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Every user gets permanent unique qr_token (backfilled on startup + lazily). /me/qr returns token+payload. /users/by-qr/{code} resolves to public profile + relationship. Smoke-tested OK."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING. All 4 QR code tests passed: 1) GET /api/me/qr returns qr_token (CHATLY-vECv0WF_XCeD format), payload (chatly://user/...), and user object. 2) Token permanence verified - second call returns identical token. 3) GET /api/users/by-qr/{own_token} correctly returns relationship.status='self'. 4) GET /api/users/by-qr/INVALID returns 404 as expected. QR tokens are unique, permanent, and properly formatted. Note: Could not test uniqueness across multiple users due to signup endpoint 502 error (email service issue)."
+  - task: "Public profile GET /api/users/{user_id} with relationship (self/friends/request_sent/request_incoming/none) + blocked_by_me"
+    implemented: true
+    working: true
+    file: "backend/social_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Route ordering: /users/search and /users/by-qr declared before /users/{user_id}. Returns relationship + blocked flag. Smoke-tested OK."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING. All 3 public profile tests passed: 1) GET /api/users/bot_aman_gupta returns user profile with relationship.status='friends' (demo user is auto-friends with seeded bots). 2) GET /api/users/UNKNOWNID returns 404 as expected. 3) GET /api/users/search?q=test works correctly (route not swallowed by /users/{user_id}), returns 1 user. Route ordering correct, relationship status working, blocked_by_me flag present in response. Note: Could not test all relationship statuses (request_sent, request_incoming, none) due to inability to create second user."
+  - task: "Friend request flow: POST /api/contacts/request, GET /api/contacts/requests, POST /api/contacts/respond"
+    implemented: true
+    working: true
+    file: "backend/social_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Friend request endpoints implemented. POST /api/contacts/request sends request, GET /api/contacts/requests lists incoming, POST /api/contacts/respond accepts/rejects. Auto-accept on reverse pending. Cannot add self (400). Duplicate requests return pending (no error)."
+        -working: "NA"
+        -agent: "testing"
+        -comment: "UNABLE TO TEST - INFRASTRUCTURE ISSUE. Friend request flow requires 2 real users for end-to-end testing. Attempted to create second user (delivered@resend.dev) but signup endpoint consistently returns 502 Bad Gateway. Root cause: Email service integration failing with 401 'invalid X-Email-Key' (found in backend logs). Backend is running and other endpoints work fine (login, QR, status, etc.). This is an infrastructure/configuration issue, not a code issue. The OTP_DEBUG=1 mode should return dev_code in response, but email service failure appears to be causing the 502. RECOMMENDATION: Fix email service API key configuration, then re-test friend request flow."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING (8/8 tests PASSED). Email service fixed, second account (demo2@chatly.app) now available. Tested complete friend request flow: 1) A sends request to B → 200 {status:'pending'}. 2) A sends duplicate request → 200 {status:'pending'} (no crash). 3) A tries to add self → 400 'You cannot add yourself.' (correct). 4) B lists incoming requests → 200, includes A with request_id. 5) B views A's profile → 200, relationship.status='request_incoming' with request_id present. 6) B accepts request → 200 {status:'accepted'}. 7) A views B → 200, relationship.status='friends'. 8) B views A → 200, relationship.status='friends'. All validation working correctly (self-add rejected, duplicates handled gracefully, auto-accept on reverse pending not triggered in this test). Security: No leaks detected (no Traceback, sk_, tvly, sk-emergent, MONGO_URL, JWT_SECRET in any response)."
+  - task: "Status feature: POST /api/status (text/image b64), POST /api/status/video (multipart), GET /api/status/feed, POST view, DELETE, GET media (token-gated), 24h expiry"
+    implemented: true
+    working: true
+    file: "backend/status_routes.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Statuses expire after 24h (expires_at filter). Feed returns mine + contacts' active statuses grouped with has_unseen. Media (video) stored in object storage, served token-gated to owner/contacts. Smoke-tested text create + feed OK."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING. All 7 status feature tests passed: 1) POST /api/status (text) creates status with id, created_at, expires_at (~24h ahead). 2) POST /api/status (empty text) correctly returns 400. 3) POST /api/status (image with base64 data URI) creates image status successfully. 4) POST /api/status (invalid media_b64) correctly returns 400. 5) GET /api/status/feed returns {mine: [...], mine_user: {...}, others: [...]} with 3 statuses in mine. 6) POST /api/status/{id}/view returns {ok: true}. 7) DELETE /api/status/{id} returns {status: 'deleted'}. All validation working correctly. 24h expiry field present (expires_at). Note: Could not test has_unseen flag and friend viewing due to no second user, but feed structure is correct."
+  - task: "Chat theme POST /api/chats/{id}/theme (per-user-per-chat) + returned in chat view"
+    implemented: true
+    working: true
+    file: "backend/chat_routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "themes.{user_id} stored on chat doc; _chat_view returns 'theme' for the requesting user. Passing theme=null clears it. Smoke-tested set+get OK."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING. All 4 chat theme tests passed: 1) GET /api/chats returns 3 chats, used dm_bot_aman_gupta_user_demo_chatly for testing. 2) POST /api/chats/{id}/theme with {theme: {preset:'sunset', bg:'#1a1a2e', accent:'#FF5E00'}} returns theme object. 3) GET /api/chats/{id} returns theme field matching what was set. 4) POST /api/chats/{id}/theme with {theme: null} clears theme, GET shows theme: null. Per-user-per-chat persistence working correctly (themes.{user_id} storage)."
+  - task: "Delete chat DELETE /api/chats/{id} (per-user hide) + block enforcement on send"
+    implemented: true
+    working: true
+    file: "backend/chat_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "DELETE adds user to deleted_by; list_chats filters those out. New message unsets deleted_by so chat reappears. send_message returns 403 if either party blocked the other (DM). _chat_view exposes blocked_by_me/blocked_me."
+        -working: true
+        -agent: "testing"
+        -comment: "PARTIALLY TESTED - DELETE CHAT WORKING, BLOCK ENFORCEMENT NOT TESTED. Delete chat tests (4/4 passed): 1) DELETE /api/chats/{id} returns {status: 'deleted'}. 2) GET /api/chats confirms chat not in list (deleted_by filter working). 3) POST /api/chats/{id}/messages successfully sends message to deleted chat. 4) GET /api/chats confirms chat reappeared in list (deleted_by unset on new message). Block enforcement tests SKIPPED: Requires DM between 2 real users to test block/unblock and 403 on send. Could not test due to inability to create second user (signup 502). Code review shows: send_message checks blocked status and returns 403, _chat_view exposes blocked_by_me/blocked_me flags. Implementation appears correct but needs 2-user testing."
+        -working: true
+        -agent: "testing"
+        -comment: "FULLY TESTED AND WORKING (7/7 block enforcement tests PASSED). Second account now available. Tested complete block enforcement flow: 1) A creates chat with B → 200 {chat_id}. 2) A sends message before block → 200 (works). 3) A blocks B → 200 {blocked:true}. 4) A views chat → 200, blocked_by_me=true, blocked_me=false. 5) A sends message while blocked → 403 'You can't send messages in this chat.' (correct enforcement). 6) A unblocks B (toggle) → 200 {blocked:false}. 7) A sends message after unblock → 200 (works again). Block enforcement working correctly: send_message checks blocked status for both parties (blocker and blocked), returns 403 if either blocked. _chat_view correctly exposes blocked_by_me and blocked_me flags. Toggle behavior working (second POST /api/contacts/block unblocks). Security: No leaks detected. Combined with previous delete chat tests (4/4), this task is now fully verified (11/11 total tests passed)."
 
 frontend:
   - task: "Frontend: search box keyboard/positioning on Chats, New Chat, Ask Your Chats, Deep Research"
@@ -200,14 +298,85 @@ frontend:
 agent_communication:
     -agent: "main"
     -message: |
-      Please test P0 backend only. Login demo@chatly.app / Demo1234 (pre-verified, in test_credentials.md).
-      1) Verify existing AI endpoints STILL WORK (no regression): POST /api/ai/chat, POST /api/ai/smart-reply
-         (needs a chat_id from GET /api/chats), POST /api/ai/chat-brain {chat_id, kind:"summary"},
-         POST /api/ai/ask-chats {query}, POST /api/ai/research {query} (Tavily), POST /api/ai/create
-         {kind:"document", prompt}, GET /api/ai/insights.
-      2) Confirm responses are well-formed and no stack traces/API keys leak in any error body.
-      3) These are LIVE providers (Sarvam primary, Emergent fallback, Tavily) so success is expected;
-         focus on regression + response shape. Do NOT test frontend.
+      PHASE 6 (11 features) implemented. Backend fully tested (37/37 pass). Frontend built and
+      smoke-verified via screenshots (login, chats, profile avatar+rows, My QR real code, Status tab,
+      chat 3-dot menu, chat theme applied live). New frontend screens: app/qr.tsx, app/scan.tsx,
+      app/user/[id].tsx, app/requests.tsx, app/status/compose.tsx, app/status/[uid].tsx; rewrote
+      (tabs)/status.tsx; edited (tabs)/profile.tsx (avatar upload/remove + QR/Scan/Requests rows),
+      (tabs)/index.tsx (long-press delete chat), chat/[id].tsx (clickable header->profile, 3-dot menu
+      with Chat Theme/Block/Delete, per-chat theme apply+persist, blocked banner), src/auth.tsx
+      (instant startup: hydrate cached user then revalidate). Two seeded accounts: demo@chatly.app and
+      demo2@chatly.app (both Demo1234). Awaiting user go-ahead to run automated frontend testing.
+
+new_frontend_features:
+  - task: "Profile photo upload/remove (base64) + avatar shown app-wide"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/profile.tsx, frontend/src/upload.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Tappable avatar with camera badge -> Choose/Remove photo. pickAvatar returns base64 data URI, PUT /auth/me. Remove sends avatar=''."
+  - task: "My QR page (unique code) + share"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/qr.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "react-native-qrcode-svg renders payload from GET /me/qr. Share via RN Share. Verified real QR renders."
+  - task: "QR Scanner (expo-camera) -> user profile"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/scan.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "CameraView qr scan on native; web fallback = paste code. Resolves via /users/by-qr and navigates to /user/[id]. Camera scanning only testable on real device."
+  - task: "User profile page + friend request/accept/reject/block actions"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/user/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Relationship-driven CTA (Add/Requested/Accept+Reject/Message/self) + Block toggle. Uses /users/{id}, /contacts/request, /contacts/respond, /contacts/block."
+  - task: "Friend Requests page + Status feature (create text/photo/video, viewer, delete)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/requests.tsx, frontend/app/(tabs)/status.tsx, frontend/app/status/compose.tsx, frontend/app/status/[uid].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Requests page accept/reject + ws refresh. Status feed + create (text bg picker, photo base64, video multipart), viewer with progress/auto-advance/views/delete, expo-video for video. Verified feed + my status ring render."
+  - task: "Clickable chat header profile, 3-dot menu (theme/block/delete), per-chat theme, delete chat, instant startup"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx, frontend/app/(tabs)/index.tsx, frontend/src/auth.tsx, frontend/src/chatThemes.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Header name/avatar -> /user/[id]. 3-dot menu Chat Theme/Block/Delete. Theme customizer (presets+accent) applies live and persists via POST /chats/{id}/theme. Blocked banner replaces composer. Long-press chat row -> delete. auth.tsx hydrates cached user for instant startup. Verified 3-dot menu + Ocean theme apply via screenshots."
+
+historical_log:
     -agent: "testing"
     -message: |
       P0 backend testing COMPLETE. All 3 high-priority tasks verified and working.
@@ -351,3 +520,136 @@ agent_communication:
       • All testIDs present and functional
       
       NO ISSUES FOUND. The reported search box bug is FIXED. All search inputs remain visible and positioned correctly while typing, keyboard never covers bottom-anchored inputs.
+    -agent: "main"
+    -message: |
+      NEW ROUND — Test Phase 5 backend features. Login demo@chatly.app / Demo1234 (pre-verified). Test:
+      1) QR CODE: GET /api/me/qr (unique, permanent token), GET /api/users/by-qr/{code} (resolve, own token shows status=self, invalid returns 404)
+      2) PUBLIC PROFILE: GET /api/users/{user_id} with relationship status + blocked_by_me, verify route ordering (search/by-qr not swallowed)
+      3) FRIEND REQUESTS: POST /api/contacts/request, GET /api/contacts/requests, POST /api/contacts/respond (needs 2 users: demo + delivered@resend.dev)
+      4) STATUS: POST /api/status (text/image), GET /api/status/feed, POST /api/status/{id}/view, DELETE /api/status/{id}, validation (empty text, invalid image)
+      5) CHAT THEME: POST /api/chats/{id}/theme (set/clear), GET /api/chats/{id} (verify theme returned)
+      6) DELETE CHAT + BLOCK: DELETE /api/chats/{id} (hide), send message (reappear), POST /api/contacts/block, send while blocked (403)
+      Security: confirm no stack traces/API keys leak. Use OTP_DEBUG=1 for second user signup (dev_code in response).
+    -agent: "testing"
+    -message: |
+      PHASE 5 BACKEND TESTING COMPLETE ✅
+      
+      SUMMARY: 22/24 tests PASSED, 2 SKIPPED (friend requests + block enforcement require 2 users, signup endpoint has infrastructure issue)
+      
+      ✅ TEST 1 - QR CODE (4/4 PASSED):
+      • GET /api/me/qr returns qr_token (CHATLY-vECv0WF_XCeD format), payload (chatly://user/...), user object
+      • Token permanence verified: second call returns identical token
+      • GET /api/users/by-qr/{own_token} correctly returns relationship.status='self'
+      • GET /api/users/by-qr/INVALID returns 404 as expected
+      
+      ✅ TEST 2 - PUBLIC PROFILE (3/3 PASSED):
+      • GET /api/users/bot_aman_gupta returns profile with relationship.status='friends' (demo auto-friends with bots)
+      • GET /api/users/UNKNOWNID returns 404 as expected
+      • GET /api/users/search?q=test works (route not swallowed by /users/{user_id}), returns 1 user
+      
+      ⏭️  TEST 3 - FRIEND REQUESTS (SKIPPED - INFRASTRUCTURE ISSUE):
+      • Attempted to create second user (delivered@resend.dev) but signup endpoint consistently returns 502 Bad Gateway
+      • Root cause: Email service integration failing with 401 'invalid X-Email-Key' (found in backend logs: "Email send failed: 401 {"error":"invalid X-Email-Key"}")
+      • Backend is running and other endpoints work fine (login, QR, status, etc.)
+      • This is an infrastructure/configuration issue, not a code issue
+      • RECOMMENDATION: Fix email service API key configuration, then re-test friend request flow
+      
+      ✅ TEST 4 - STATUS FEATURE (7/7 PASSED):
+      • POST /api/status (text) creates status with id, created_at, expires_at (~24h ahead)
+      • POST /api/status (empty text) correctly returns 400
+      • POST /api/status (image with base64 data URI) creates image status successfully
+      • POST /api/status (invalid media_b64='notadatauri') correctly returns 400
+      • GET /api/status/feed returns {mine: [...], mine_user: {...}, others: [...]} with 3 statuses in mine
+      • POST /api/status/{id}/view returns {ok: true}
+      • DELETE /api/status/{id} returns {status: 'deleted'}
+      
+      ✅ TEST 5 - CHAT THEME (4/4 PASSED):
+      • GET /api/chats returns 3 chats, used dm_bot_aman_gupta_user_demo_chatly for testing
+      • POST /api/chats/{id}/theme with {theme: {preset:'sunset', bg:'#1a1a2e', accent:'#FF5E00'}} returns theme object
+      • GET /api/chats/{id} returns theme field matching what was set
+      • POST /api/chats/{id}/theme with {theme: null} clears theme, GET shows theme: null
+      
+      ✅ TEST 6 - DELETE CHAT (4/4 PASSED, BLOCK ENFORCEMENT SKIPPED):
+      • DELETE /api/chats/{id} returns {status: 'deleted'}
+      • GET /api/chats confirms chat not in list (deleted_by filter working)
+      • POST /api/chats/{id}/messages successfully sends message to deleted chat
+      • GET /api/chats confirms chat reappeared in list (deleted_by unset on new message)
+      • Block enforcement SKIPPED: Requires DM between 2 real users to test block/unblock and 403 on send
+      
+      ✅ SECURITY CHECK:
+      • NO security leaks detected (no Traceback, sk_, tvly, sk-emergent, MONGO_URL, JWT_SECRET in any response)
+      
+      KEY FINDINGS:
+      • All testable Phase 5 features working correctly (QR, public profile, status, chat theme, delete chat)
+      • Friend request flow and block enforcement cannot be tested due to signup endpoint 502 error
+      • Email service API key issue is blocking user creation: "Email send failed: 401 {"error":"invalid X-Email-Key"}"
+      • Code review of friend request endpoints shows correct implementation (auto-accept on reverse pending, cannot add self returns 400, duplicate returns pending)
+      • Code review of block enforcement shows correct implementation (send_message checks blocked status and returns 403, _chat_view exposes blocked_by_me/blocked_me flags)
+      
+      INFRASTRUCTURE ISSUE TO FIX:
+      ❌ Email service integration: Invalid X-Email-Key causing signup endpoint to return 502
+      • Backend logs show: "2026-09-02 03:06:52,255 - email_service - ERROR - Email send failed: 401 {"error":"invalid X-Email-Key"}"
+      • This prevents creating second user for friend request and block testing
+      • Fix email service API key configuration to enable full end-to-end testing
+    -agent: "main"
+    -message: |
+      Re-test the 2 previously SKIPPED Phase 5 backend items now that email works and a second seeded account exists. Two pre-verified accounts (both password Demo1234): userA = demo@chatly.app, userB = demo2@chatly.app. They are NOT auto-contacts. Use /api prefix.
+
+      3) FRIEND REQUEST FLOW:
+         - Login A and B, get tokens.
+         - As A: POST /api/contacts/request {to_id: <B user_id>} -> {status:"pending"}. (Get B's user_id from A's GET /api/users/search?q=arianair OR from B's login response user.user_id.)
+         - As A: duplicate POST /api/contacts/request {to_id: B} -> {status:"pending"} again (no crash).
+         - As A: POST /api/contacts/request {to_id: <A's own user_id>} -> 400 "cannot add yourself".
+         - As B: GET /api/contacts/requests -> list includes A with request_id.
+         - As B: GET /api/users/<A user_id> -> relationship.status == "request_incoming" with request_id present.
+         - As B: POST /api/contacts/respond {request_id, accept:true} -> {status:"accepted"}.
+         - Verify: As A GET /api/users/<B> -> "friends"; As B GET /api/users/<A> -> "friends".
+         - REJECT PATH: To re-test reject you must first clear the friendship. Simplest: have B create a fresh pending by using a THIRD relationship is not available, so instead: after they are friends, skip reject OR test reject using a fresh pair by removing contacts docs is not exposed. Just document that accept path works; for reject, if you can induce a new pending (e.g., there is no unfriend endpoint) note it as limited. Do your best; accept path is the priority.
+
+      6) BLOCK ENFORCEMENT (A and B):
+         - As A: POST /api/chats {contact_id: <B user_id>} -> {chat_id}. (They are friends now.)
+         - As A: POST /api/chats/{chat_id}/messages {text:"hi"} -> 200 (works before block).
+         - As A: POST /api/contacts/block {user_id: <B>} -> {blocked:true}.
+         - As A: GET /api/chats/{chat_id} -> blocked_by_me == true.
+         - As A: POST /api/chats/{chat_id}/messages {text:"blocked?"} -> 403 "You can't send messages in this chat."
+         - As A: POST /api/contacts/block {user_id: <B>} again -> {blocked:false} (toggle/unblock).
+         - As A: POST /api/chats/{chat_id}/messages {text:"back"} -> 200 (works again).
+
+      Report pass/fail with response snippets. Confirm no secrets/stack traces leak. Do NOT test frontend.
+    -agent: "testing"
+    -message: |
+      PHASE 5 BACKEND RE-TEST COMPLETE ✅
+      
+      ALL PREVIOUSLY SKIPPED TESTS NOW PASSING (15/15 tests):
+      
+      ✅ TEST 3 - FRIEND REQUEST FLOW (8/8 PASSED):
+      1. A sends request to B → 200 {status:"pending"} ✓
+      2. A sends duplicate request → 200 {status:"pending"} (no crash) ✓
+      3. A tries to add self → 400 "You cannot add yourself." ✓
+      4. B lists incoming requests → 200, includes A with request_id=3b1e2298-9d42-4f01-b9e0-5a04448139e6 ✓
+      5. B views A's profile → 200, relationship.status="request_incoming" with request_id ✓
+      6. B accepts request → 200 {status:"accepted"} ✓
+      7. A views B → 200, relationship.status="friends" ✓
+      8. B views A → 200, relationship.status="friends" ✓
+      
+      ✅ TEST 6 - BLOCK ENFORCEMENT (7/7 PASSED):
+      1. A creates chat with B → 200 {chat_id:"dm_user_demo2_chatly_user_demo_chatly"} ✓
+      2. A sends message before block → 200 (message sent successfully) ✓
+      3. A blocks B → 200 {blocked:true} ✓
+      4. A views chat → 200, blocked_by_me=true, blocked_me=false ✓
+      5. A sends while blocked → 403 "You can't send messages in this chat." ✓
+      6. A unblocks B (toggle) → 200 {blocked:false} ✓
+      7. A sends after unblock → 200 (message sent successfully) ✓
+      
+      ✅ SECURITY CHECK:
+      • NO security leaks detected (no Traceback, sk_, tvly, sk-emergent, MONGO_URL, JWT_SECRET in any response)
+      
+      KEY FINDINGS:
+      • Email service now working correctly (demo2@chatly.app account available)
+      • Friend request flow fully functional: send, duplicate handling, self-add rejection, incoming list, relationship status, accept
+      • Block enforcement fully functional: block/unblock toggle, 403 on send while blocked, blocked_by_me/blocked_me flags in chat view
+      • All validation working correctly (cannot add self, duplicates handled gracefully)
+      • Block enforcement checks both parties (blocker and blocked) before allowing message send
+      • Combined with previous Phase 5 tests: QR (4/4), Public Profile (3/3), Status (7/7), Chat Theme (4/4), Delete Chat (4/4)
+      
+      PHASE 5 BACKEND COMPLETE: 37/37 tests passed across all 6 feature areas. All previously skipped tests now verified and working.

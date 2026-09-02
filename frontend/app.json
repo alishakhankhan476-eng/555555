@@ -54,7 +54,14 @@
           "photosPermission": "Share photos from your library in chats",
           "cameraPermission": "Take and send photos in your chats"
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan Chatly QR codes to add friends"
+        }
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

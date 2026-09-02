@@ -90,18 +90,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
       }
-      // 3) Existing token
+      // 3) Existing token — instant startup: hydrate the cached user immediately,
+      //    then revalidate against the server in the background.
       const t = await storage.secureGet<string>(TOKEN_KEY, "");
       if (t) {
         setToken(t);
-        try {
-          const res = await api.get<{ user: User }>("/auth/me");
-          setUserState(res.user);
-          storage.setItem(USER_KEY, res.user as any);
-        } catch {
-          await storage.secureRemove(TOKEN_KEY);
-          setToken(null);
-        }
+        const cached = await storage.getItem<User | null>(USER_KEY, null);
+        if (cached) setUserState(cached as User);
+        setLoading(false);
+        api.get<{ user: User }>("/auth/me")
+          .then((res) => { setUserState(res.user); storage.setItem(USER_KEY, res.user as any); })
+          .catch(async (e) => {
+            const m = String(e?.message || "").toLowerCase();
+            const authErr = m.includes("token") || m.includes("authenticat") || m.includes("not found") || m.includes("verify");
+            // Only drop the session on a real auth failure; keep it on transient/offline errors.
+            if (authErr) {
+              await storage.secureRemove(TOKEN_KEY);
+              await storage.removeItem(USER_KEY);
+              setToken(null);
+              setUserState(null);
+            }
+          });
+        return;
       }
       setLoading(false);
     })();

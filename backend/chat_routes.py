@@ -137,14 +137,24 @@ async def _chat_view(chat: dict, me: str) -> dict:
                          "member_count": len(chat.get("participants", []))}
     else:
         others = [p for p in chat["participants"] if p != me]
-        base["other"] = await _user_public(others[0]) if others else None
+        other_id = others[0] if others else None
+        base["other"] = await _user_public(other_id) if other_id else None
+        if other_id:
+            me_doc = await db.users.find_one({"user_id": me}, {"_id": 0, "blocked": 1})
+            other_doc = await db.users.find_one({"user_id": other_id}, {"_id": 0, "blocked": 1})
+            base["blocked_by_me"] = other_id in (me_doc or {}).get("blocked", [])
+            base["blocked_me"] = me in (other_doc or {}).get("blocked", [])
+    base["theme"] = chat.get("themes", {}).get(me)
     return base
 
 
 @router.get("/chats")
 async def list_chats(user: dict = Depends(get_current_user)):
     await ensure_seed_chats(user["user_id"])
-    cursor = db.chats.find({"participants": user["user_id"]}, {"_id": 0}).sort("last_ts", -1)
+    cursor = db.chats.find(
+        {"participants": user["user_id"], "deleted_by": {"$ne": user["user_id"]}},
+        {"_id": 0},
+    ).sort("last_ts", -1)
     out = []
     async for chat in cursor:
         out.append(await _chat_view(chat, user["user_id"]))
@@ -205,7 +215,8 @@ async def _persist_message(chat_id: str, sender_id: str, text: str, mtype: str =
     await db.messages.insert_one(dict(msg))
     await db.chats.update_one(
         {"chat_id": chat_id},
-        {"$set": {"last_message": text[:120], "last_ts": msg["created_at"]}},
+        {"$set": {"last_message": text[:120], "last_ts": msg["created_at"]},
+         "$unset": {"deleted_by": ""}},
     )
     msg.pop("_id", None)
     return msg
@@ -249,8 +260,14 @@ async def send_message(chat_id: str, body: SendBody, user: dict = Depends(get_cu
     chat = await db.chats.find_one({"chat_id": chat_id, "participants": user["user_id"]})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found.")
-    msg = await _persist_message(chat_id, user["user_id"], body.text.strip(), body.type, body.reply_to)
     others = [p for p in chat["participants"] if p != user["user_id"]]
+    # Block enforcement for direct chats
+    if chat.get("type") == "dm" and others:
+        oid = others[0]
+        other_doc = await db.users.find_one({"user_id": oid}, {"_id": 0, "blocked": 1})
+        if user["user_id"] in (other_doc or {}).get("blocked", []) or oid in user.get("blocked", []):
+            raise HTTPException(status_code=403, detail="You can't send messages in this chat.")
+    msg = await _persist_message(chat_id, user["user_id"], body.text.strip(), body.type, body.reply_to)
     await manager.send_to_users(others, {"type": "message", "chat_id": chat_id, "message": msg})
     # trigger persona reply for bot contacts
     for oid in others:
@@ -258,6 +275,32 @@ async def send_message(chat_id: str, body: SendBody, user: dict = Depends(get_cu
         if other and other.get("is_bot"):
             asyncio.create_task(_demo_reply(chat_id, oid, user["user_id"]))
     return {"message": msg}
+
+
+class ThemeBody(BaseModel):
+    theme: dict | None = None
+
+
+@router.post("/chats/{chat_id}/theme")
+async def set_chat_theme(chat_id: str, body: ThemeBody, user: dict = Depends(get_current_user)):
+    chat = await db.chats.find_one({"chat_id": chat_id, "participants": user["user_id"]})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    key = f"themes.{user['user_id']}"
+    if body.theme is None:
+        await db.chats.update_one({"chat_id": chat_id}, {"$unset": {key: ""}})
+    else:
+        await db.chats.update_one({"chat_id": chat_id}, {"$set": {key: body.theme}})
+    return {"theme": body.theme}
+
+
+@router.delete("/chats/{chat_id}")
+async def delete_chat(chat_id: str, user: dict = Depends(get_current_user)):
+    chat = await db.chats.find_one({"chat_id": chat_id, "participants": user["user_id"]})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    await db.chats.update_one({"chat_id": chat_id}, {"$addToSet": {"deleted_by": user["user_id"]}})
+    return {"status": "deleted"}
 
 
 class ReactBody(BaseModel):
