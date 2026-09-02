@@ -30,6 +30,7 @@ export function AppText({
       numberOfLines={numberOfLines}
       style={[
         { fontSize: fontSize[size], fontWeight: wMap[weight], color: color || (muted ? colors.onSurfaceMuted : colors.onSurface) },
+        (size === "xxl" || size === "xxxl") && { letterSpacing: -0.5 },
         center && { textAlign: "center" },
         style,
       ]}
@@ -74,7 +75,9 @@ export function Button({
       onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); }}
       style={({ pressed }) => [
         styles.btn,
-        { backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
+        { backgroundColor: bg, opacity: disabled ? 0.5 : 1, transform: [{ scale: pressed && !disabled ? 0.98 : 1 }] },
+        variant === "primary" && !disabled && styles.btnPrimaryShadow,
+        variant === "secondary" && { borderWidth: 1, borderColor: colors.border },
         full && { alignSelf: "stretch" },
         style,
       ]}
@@ -84,7 +87,7 @@ export function Button({
       ) : (
         <View style={styles.btnRow}>
           {icon && <Ionicons name={icon} size={18} color={fg} style={{ marginRight: 8 }} />}
-          <Text style={{ color: fg, fontWeight: "700", fontSize: fontSize.lg }}>{title}</Text>
+          <Text style={{ color: fg, fontWeight: "700", fontSize: fontSize.lg, letterSpacing: 0.2 }}>{title}</Text>
         </View>
       )}
     </Pressable>
@@ -280,6 +283,7 @@ export function SettingRow({ icon, label, value, onPress, right, testID, color }
 
 const styles = StyleSheet.create({
   btn: { height: 52, borderRadius: radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg },
+  btnPrimaryShadow: { ...Platform.select({ ios: { shadowColor: "#FF5E00", shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 3 } }) },
   btnRow: { flexDirection: "row", alignItems: "center" },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
   inputWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, minHeight: 52 },

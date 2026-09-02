@@ -23,6 +23,7 @@
         "backgroundColor": "#FF5E00"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.emergent.aimessenger.bq2ltq",
       "permissions": [
         "CAMERA",

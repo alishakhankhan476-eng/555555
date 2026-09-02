@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { View, ScrollView, Switch } from "react-native";
+import { View, ScrollView, Switch, Linking } from "react-native";
+import { useRouter } from "expo-router";
 import { useTheme, spacing } from "@/src/theme";
 import { AppText, Card, SettingRow } from "@/src/ui";
 import { StackHeader } from "@/src/Header";
+import { SUPPORT_EMAIL } from "@/src/LegalDoc";
 
 export default function Settings() {
   const { colors, mode, setMode } = useTheme();
+  const router = useRouter();
   const [notif, setNotif] = useState(true);
   const [aiNotif, setAiNotif] = useState(true);
   const [preview, setPreview] = useState(true);
@@ -34,6 +37,22 @@ export default function Settings() {
                 {i < 2 && <View style={{ height: 1, backgroundColor: colors.divider, marginLeft: 46 }} />}
               </View>
             ))}
+          </Card>
+        </View>
+
+        <View>
+          <AppText weight="bold" muted size="sm" style={{ marginBottom: spacing.sm }}>LEGAL</AppText>
+          <Card style={{ paddingVertical: spacing.xs }}>
+            <SettingRow testID="settings-privacy" icon="shield-checkmark-outline" label="Privacy Policy" onPress={() => router.push("/legal/privacy")} />
+            <View style={{ height: 1, backgroundColor: colors.divider, marginLeft: 46 }} />
+            <SettingRow testID="settings-terms" icon="document-text-outline" label="Terms & Conditions" onPress={() => router.push("/legal/terms")} />
+          </Card>
+        </View>
+
+        <View>
+          <AppText weight="bold" muted size="sm" style={{ marginBottom: spacing.sm }}>SUPPORT</AppText>
+          <Card style={{ paddingVertical: spacing.xs }}>
+            <SettingRow testID="settings-support" icon="mail-outline" label="Contact Support" value={SUPPORT_EMAIL} right={null} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
           </Card>
         </View>
 

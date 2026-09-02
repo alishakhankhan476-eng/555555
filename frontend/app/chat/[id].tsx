@@ -424,13 +424,14 @@ export default function ChatScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: ct.bg }} behavior="translate-with-padding" keyboardVerticalOffset={0}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: ct.bg }} behavior="padding" keyboardVerticalOffset={0}>
         {loading ? <Loading /> : (
           <FlatList
             data={messages}
             keyExtractor={(m) => m.message_id}
             renderItem={renderMsg}
-            contentContainerStyle={{ paddingVertical: spacing.md }}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingVertical: spacing.md, flexGrow: 1 }}
             ListEmptyComponent={<View style={{ padding: spacing.xxl, alignItems: "center" }}><AppText muted center>Say hello and start the conversation</AppText></View>}
           />
         )}

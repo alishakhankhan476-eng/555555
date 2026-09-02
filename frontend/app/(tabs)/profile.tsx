@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { View, ScrollView, Pressable, Modal, StyleSheet } from "react-native";
+import { View, ScrollView, Pressable, Modal, StyleSheet, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { AppText, Avatar, Icon, Card, SettingRow, Input, Button, useToast } from
 import { useAuth } from "@/src/auth";
 import { api } from "@/src/api";
 import { pickAvatar } from "@/src/upload";
+import { SUPPORT_EMAIL } from "@/src/LegalDoc";
 
 export default function Profile() {
   const { colors, mode, setMode } = useTheme();
@@ -125,6 +126,12 @@ export default function Profile() {
           <Card style={{ paddingVertical: spacing.xs }}>
             <SettingRow testID="row-privacy" icon="shield-checkmark-outline" label="Privacy & Security" onPress={() => router.push("/privacy")} />
             <SettingRow testID="row-settings" icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} />
+          </Card>
+
+          <Card style={{ paddingVertical: spacing.xs }}>
+            <SettingRow testID="row-privacy-policy" icon="reader-outline" label="Privacy Policy" onPress={() => router.push("/legal/privacy")} />
+            <SettingRow testID="row-terms" icon="document-text-outline" label="Terms & Conditions" onPress={() => router.push("/legal/terms")} />
+            <SettingRow testID="row-support" icon="mail-outline" label="Contact Support" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
           </Card>
 
           <Card style={{ paddingVertical: spacing.xs }}>

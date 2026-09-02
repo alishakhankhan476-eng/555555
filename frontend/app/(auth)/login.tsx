@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme, spacing } from "@/src/theme";
 import { AppText, Input, Button, useToast, Icon } from "@/src/ui";
 import { useAuth } from "@/src/auth";
+import { LegalLinks } from "@/src/LegalDoc";
 
 export default function Login() {
   const { colors } = useTheme();
@@ -81,6 +82,8 @@ export default function Login() {
               <AppText weight="bold" color={colors.brandPrimary}>Sign Up</AppText>
             </Pressable>
           </View>
+
+          <LegalLinks style={{ marginTop: spacing.xxl, paddingBottom: insets.bottom + spacing.md }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

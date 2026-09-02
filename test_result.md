@@ -174,15 +174,13 @@ metadata:
 
 test_plan:
   current_focus:
-    - "QR: unique per-user token, my QR, resolve by-qr"
-    - "Public profile + relationship status"
-    - "Status feature: create/feed/view/delete + 24h expiry"
-    - "Chat theme per-user-per-chat persistence"
-    - "Delete chat (per-user hide) + reappears on new message"
-    - "Block enforcement on send + block flags in chat view"
+    - "Legal pages reachable from Login, Signup, Settings, Profile (Privacy Policy + Terms)"
+    - "Chat keyboard layout: header fixed, list shrinks, input rises (no header movement)"
+    - "No regressions in chat send / navigation after keyboard + polish changes"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+  run_ui: true
 
 new_backend_features:
   - task: "QR code: GET /api/me/qr, GET /api/users/by-qr/{code} (unique, permanent)"
@@ -298,7 +296,42 @@ frontend:
 agent_communication:
     -agent: "main"
     -message: |
-      PHASE 6 (11 features) implemented. Backend fully tested (37/37 pass). Frontend built and
+      PHASE 7: (a) Added Privacy Policy + Terms pages (app/legal/privacy.tsx, app/legal/terms.tsx via
+      src/LegalDoc.tsx) reachable from Login footer, Signup footer, Settings (LEGAL+SUPPORT), and Profile.
+      Support email jarvisai9077@gmail.com throughout (mailto). (b) Fixed chat keyboard layout: header is a
+      sibling ABOVE KeyboardAvoidingView (react-native-keyboard-controller) with behavior="padding",
+      FlatList has flex:1 + flexGrow contentContainer, and app.json android softwareKeyboardLayoutMode="resize"
+      so the header stays fixed and only the composer rises while the list shrinks. (c) App-wide polish via
+      shared primitives (Button press-scale + primary shadow, heading letterSpacing) + auth footers.
+      Please TEST FRONTEND (web preview): legal navigation from all 4 entry points + content renders +
+      support email present; chat still opens, input focus/typing/send works and header remains visible;
+      no navigation regressions. NOTE: real mobile soft-keyboard cannot be triggered on web — verify layout
+      integrity and that focusing the message input does not hide/move the header or break the composer.
+      Login: demo@chatly.app / Demo1234.
+
+new_frontend_features_phase7:
+  - task: "Privacy Policy & Terms pages + links (Login/Signup/Settings/Profile) + support email"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/legal/privacy.tsx, frontend/app/legal/terms.tsx, frontend/src/LegalDoc.tsx, frontend/app/(auth)/login.tsx, frontend/app/(auth)/signup.tsx, frontend/app/settings.tsx, frontend/app/(tabs)/profile.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "App-specific legal content (accounts, profile photos, messages, statuses 24h, QR, friend requests, blocking, AI processing, third-party, storage, security, deletion). Verified Login footer + Privacy page render via screenshot."
+  - task: "Chat keyboard layout fix (header fixed, list shrinks, input rises) + Android adjustResize"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx, frontend/app.json"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Header sibling above KAV; behavior='padding'; FlatList flex:1; android softwareKeyboardLayoutMode='resize'. Web cannot trigger soft keyboard — verify layout integrity + no regressions."
       smoke-verified via screenshots (login, chats, profile avatar+rows, My QR real code, Status tab,
       chat 3-dot menu, chat theme applied live). New frontend screens: app/qr.tsx, app/scan.tsx,
       app/user/[id].tsx, app/requests.tsx, app/status/compose.tsx, app/status/[uid].tsx; rewrote

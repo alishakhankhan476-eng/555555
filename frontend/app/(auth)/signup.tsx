@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, spacing } from "@/src/theme";
 import { AppText, Input, Button, useToast, Icon } from "@/src/ui";
 import { useAuth } from "@/src/auth";
+import { LegalLinks } from "@/src/LegalDoc";
 
 export default function Signup() {
   const { colors } = useTheme();
@@ -59,6 +60,11 @@ export default function Signup() {
               <AppText weight="bold" color={colors.brandPrimary}>Log In</AppText>
             </Pressable>
           </View>
+
+          <AppText muted center size="sm" style={{ marginTop: spacing.xl, lineHeight: 18 }}>
+            By creating an account you agree to our
+          </AppText>
+          <LegalLinks style={{ marginTop: 6, paddingBottom: insets.bottom + spacing.md }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
